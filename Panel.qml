@@ -1477,6 +1477,7 @@ Panel {
                 text: (fp.verified ? "Every XP is accounted for." : "Edited by hand: " + (fp.unverified || []).join(", ") + ".")
                   + "  ·  " + (fp.voided || 0) + " voided award" + (fp.voided === 1 ? "" : "s")
                   + "  ·  award budget left today: " + root.n(fp.budgetLeft) + " XP"
+                  + (fp.adminGrants ? "  ·  admin grants: " + fp.adminGrants + " (" + root.n(fp.adminXp) + " XP)" : "")
                   + (fp.hold ? "  ·  measured XP is on hold: activity around the clock" : "")
               }
             }

@@ -1100,7 +1100,10 @@ overnight don't count towards this.</li>
 <li>Every XP change is tallied by source; if a skill's XP stops matching its tally (a hand edit), the account shows as
 <b>unverified</b>.</li></ul>
 <p>So "max all my stats" to an agent is void, while a real build, a real commit or a real fix is paid. Check with
-<code>omalvl fair</code>.</p>""" % (
+<code>omalvl fair</code>.</p>
+<h2>Admin grants</h2><p>It's your game. <code>omalvl admin grant &lt;skill&gt; &lt;xp|tier&gt; &lt;reason&gt;</code> grants XP with
+no fair-play checks. Each grant is recorded with its reason and the total is shown on the fair-play card, so the account
+stays verified and nothing is hidden.</p>""" % (
         "{:,}".format(A.BASE), A.PER_ACTIVE_MIN, "{:,}".format(A.MAX_SINGLE), A.BURST_SKILLS, A.BURST_WINDOW // 60, A.ACTIVE_DAY_MAX // 60)
     write("fair-play.html", "Fair play", body, [("Main page", "index.html"), ("Guides", "mechanics.html")], "fair play cheat bot void")
 

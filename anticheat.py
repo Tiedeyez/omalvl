@@ -24,6 +24,10 @@ Two kinds of XP:
               * the same reason twice in DUP_DAYS is voided, and a reason must say something;
               * one award per skill per SAME_SKILL_GAP.
 
+Admin grants (`omalvl admin grant`) are the owner's override: they skip every check above, are
+recorded with their reason and tallied as "admin", and the panel shows the total, so the account
+stays verified and nothing is hidden.
+
 A voided award grants nothing; it is logged with its reason, counted on the account and
 shown in the panel. Nothing is deleted or hidden.
 
@@ -123,7 +127,7 @@ def check_award(fair, skill, xp, reason, kind, now=None):
     burst = {a["skill"] for a in recent if now - a["t"] < BURST_WINDOW} | {skill}
     if len(burst) > BURST_SKILLS:
         return False, "awards across %d skills in %d minutes" % (len(burst), BURST_WINDOW // 60)
-    spent = sum(a["xp"] for a in recent if now - a["t"] < DAY)
+    spent = sum(a["xp"] for a in recent if now - a["t"] < DAY and a["kind"] != "admin")
     limit = budget(fair, now)
     if spent + xp > limit:
         return False, "more than the last 24 hours of real use backs up (%s of %s XP)" % (

@@ -102,6 +102,8 @@ Leveling is never capped: measured activity is already paced per 30-second tick.
 - A machine "active" for more than 20 of the last 24 hours stops earning measured XP until the pattern breaks.
 - Every XP change is tallied by source. If the save is edited by hand, the account shows as unverified.
 
+You're the admin of your own game: `omalvl admin grant <skill> <xp|tier> <reason>` grants XP with no fair-play checks. Admin grants are logged with their reason and shown openly on the fair-play card, so the account stays verified and nothing is hidden.
+
 `omalvl fair` and the panel's Log tab show the status.
 
 ## Privacy

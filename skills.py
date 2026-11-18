@@ -36,7 +36,8 @@ Commands:
   run <command...>          queue a long job in a job slot (or: run --pid N)
   collect [slot] | jobs     collect finished jobs for Workload XP / list the four slots
   streak                    your daily streak (the first active minute of each day continues it)
-  add <skill> <xp>          grant XP by hand
+  add <skill> <xp>          grant XP by hand (fair play applies)
+  admin grant <skill> <xp|tier> <why>  the owner's override: no fair-play checks, logged and shown openly
   agent <skill> <tier> <why>  an AI agent awards work XP, sized by difficulty:
                             trivial 100, easy 300, medium 1k, hard 3k, expert 10k, master 30k (or a number)
   task <name> [xp]          a named daily task (commit, write, tidy, ...)
@@ -1025,6 +1026,9 @@ def grant(amounts=None, quests=(), why="by hand", events=None, rates=None, token
             fair["voidedXp"] += int(sum(amounts.values()))
             why = "voided (%s): %s" % (res.voided, why)
             amounts = {}
+        if source == "admin" and amounts:
+            for k, xp in amounts.items():
+                anticheat.record_award(fair, k, int(xp), why, "admin", True, "", now)
         if source in ("agent", "manual") and amounts:
             for k, xp in list(amounts.items()):
                 ok, why_not = anticheat.check_award(fair, k, int(xp), why, source, now)
@@ -1289,6 +1293,33 @@ def cmd_add(argv, agent=False):
             save(data)
     announce(res)
     print("ok %s +%d%s" % (key, xp, " (%s)" % tier if tier else ""))
+
+
+def cmd_admin(argv):
+    """omalvl admin grant <skill> <xp|tier> <reason>   the owner's override: XP with no fair-play checks"""
+    if len(argv) < 4 or argv[0] != "grant":
+        print("usage: omalvl admin grant <skill> <xp|tier> <reason>\n"
+              "  Grants XP with no fair-play budget. Every grant is logged with its reason and shown\n"
+              "  on the fair-play card (omalvl fair), and the account stays verified.", file=sys.stderr)
+        return 2
+    key = skill_key(argv[1])
+    if not key:
+        print("unknown skill: %s (%s)" % (argv[1], ", ".join(SKILL_KEYS)), file=sys.stderr)
+        return 2
+    tier = argv[2].lower()
+    try:
+        xp = AGENT_TIERS[tier] if tier in AGENT_TIERS else int(float(tier))
+    except ValueError:
+        print("not a tier or a number: %s" % argv[2], file=sys.stderr)
+        return 2
+    reason = " ".join(argv[3:]).strip()
+    if xp <= 0 or len(reason) < 4:
+        print("xp must be positive and the reason must say what it is for", file=sys.stderr)
+        return 2
+    res = grant({key: xp}, why="admin: " + reason, source="admin", token_drop=True)
+    announce(res)
+    print("ok admin %s +%s" % (key, format(xp, ",")))
+    return 0
 
 
 def cmd_task(argv):
@@ -1625,8 +1656,11 @@ def fair_info(data):
             "voided": f["voided"], "voidedXp": f["voidedXp"], "hold": bool(f.get("measuredHold")),
             "active24h": round(anticheat.active_minutes(f)), "imported": bool(data["meta"].get("imported")),
             "worked24h": round(anticheat.worked_minutes(f)),
+            "adminXp": sum(v.get("admin", 0) for v in f["sources"].values()),
+            "adminGrants": sum(1 for a in f["awards"] if a.get("kind") == "admin"),
             "budgetLeft": max(0, int(anticheat.budget(f)
-                                     - sum(a["xp"] for a in f["awards"] if a["ok"] and time.time() - a["t"] < anticheat.DAY))),
+                                     - sum(a["xp"] for a in f["awards"] if a["ok"] and a.get("kind") != "admin"
+                                           and time.time() - a["t"] < anticheat.DAY))),
             "recentVoids": [{"t": a["t"], "skill": a["skill"], "xp": a["xp"], "why": a["void"]} for a in voids]}
 
 
@@ -1639,6 +1673,8 @@ def cmd_fair(argv):
     print("Fair play: %s" % ("verified" if fp["verified"] else "UNVERIFIED (edited by hand: %s)" % ", ".join(fp["unverified"])))
     print("Last 24 h: %d min at the keyboard, %d worked min (incl. agents)  ·  award budget left: %s XP"
           % (fp["active24h"], fp["worked24h"], format(fp["budgetLeft"], ",")))
+    if fp["adminGrants"]:
+        print("Admin grants: %d, %s XP (shown openly; they skip fair play)" % (fp["adminGrants"], format(fp["adminXp"], ",")))
     print("Voided: %d award(s), %s XP%s" % (fp["voided"], format(fp["voidedXp"], ","),
           "  ·  measured XP on hold (activity around the clock)" if fp["hold"] else ""))
     for v in fp["recentVoids"]:
@@ -2894,7 +2930,7 @@ def main():
     cmd, argv = (sys.argv[1], sys.argv[2:]) if len(sys.argv) > 1 else ("list", [])
     handlers = {
         "list": cmd_list, "stats": cmd_list, "add": cmd_add,
-        "agent": lambda a: cmd_add(a, agent=True), "task": cmd_task, "get": cmd_get,
+        "agent": lambda a: cmd_add(a, agent=True), "admin": cmd_admin, "task": cmd_task, "get": cmd_get,
         "total": lambda a: print(snapshot()["total"]), "state": lambda a: print(json.dumps(snapshot())),
         "panel-state": cmd_panel_state, "rice": cmd_rice,
         "quests": cmd_quests, "quest": cmd_quest, "contract": cmd_contract, "signal": cmd_signal,

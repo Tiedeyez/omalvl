@@ -249,6 +249,16 @@ class FairPlay(unittest.TestCase):
         self.assertEqual(anticheat.worked_minutes(f, now=now), 60)
         self.assertEqual(anticheat.active_minutes(f, now=now), 50)      # the around-the-clock hold ignores agents
 
+    def test_admin_grant_skips_fair_play_but_is_shown(self):
+        self.assertEqual(S.cmd_admin(["grant", "commits", "29900", "owner override for a shipped project"]), 0)
+        d = S.load()
+        self.assertEqual(d["xp"]["commits"], 29_900)
+        fp = S.fair_info(d)
+        self.assertTrue(fp["verified"])
+        self.assertEqual((fp["adminGrants"], fp["adminXp"]), (1, 29_900))
+        # it does not eat the agent budget
+        self.assertEqual(S.grant({"shell": 1000}, why="agent [medium]: a real fix after the grant", source="agent").voided, "")
+
     def test_single_award_cap(self):
         self.activity(20)
         self.assertNotEqual(S.grant({"shell": 10_000_000}, why="manual", source="manual").voided, "")
