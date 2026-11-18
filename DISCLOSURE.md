@@ -68,7 +68,7 @@ The only HTTP request is to `http://127.0.0.1:8080` (a local model on your own m
 
 ## Fair play
 
-OmaLvL voids XP that real use doesn't back up (agent awards and manual adds above what your recent activity supports, a sweep across many skills at once, repeated awards for the same work, and measured XP from a machine that is "active" around the clock). Every change is tallied by source, and an account whose save was edited by hand shows as **unverified**. All of this is local and readable in `anticheat.py`; nothing is reported anywhere.
+OmaLvL voids XP that real use doesn't back up (agent awards and manual adds above what your recent activity supports, where activity means minutes at the keyboard or minutes in which an agent or local model was measurably using CPU, a sweep across many skills at once, repeated awards for the same work, and measured XP from a machine that is "active" around the clock). Every change is tallied by source, and an account whose save was edited by hand shows as **unverified**. All of this is local and readable in `anticheat.py`; nothing is reported anywhere.
 
 ## Files that are not part of the running plugin
 

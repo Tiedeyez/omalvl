@@ -1090,11 +1090,13 @@ def page_fair():
     import anticheat as A
     body = """<p class="lead">There is no cap on how fast you can level by using the machine. What fair play stops is XP
 that real use doesn't back up.</p><ul>
-<li>Awards from agents and by hand share a budget of <b>%s XP</b> plus <b>%d per active minute</b> in the last 24 hours, and
-any single award is capped at %s XP.</li>
+<li>Awards from agents and by hand share a budget of <b>%s XP</b> plus <b>%d per worked minute</b> in the last 24 hours, and
+any single award is capped at %s XP. A worked minute is one where you were at the keyboard or an AI agent or local model was
+measurably working for you (its CPU time), so work you wait on counts. Each hour counts at most 60 worked minutes.</li>
 <li>Awards to more than %d different skills within %d minutes are void (sweeping every skill is the botting pattern).</li>
 <li>The same reason again within 7 days is void.</li>
-<li>More than %d hours of activity in 24 holds measured XP (that's a bot, or a stuck sensor).</li>
+<li>More than %d hours of keyboard activity in 24 holds measured XP (that's a bot, or a stuck sensor). Agents working
+overnight don't count towards this.</li>
 <li>Every XP change is tallied by source; if a skill's XP stops matching its tally (a hand edit), the account shows as
 <b>unverified</b>.</li></ul>
 <p>So "max all my stats" to an agent is void, while a real build, a real commit or a real fix is paid. Check with

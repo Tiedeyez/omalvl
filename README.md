@@ -96,7 +96,7 @@ Optional, in `~/.config/omalvl/config.json`:
 
 Leveling is never capped: measured activity is already paced per 30-second tick. What's voided is XP that real use doesn't back up:
 
-- Agent awards (`omalvl agent`) and manual adds share a budget of 5,000 XP plus 100 per active minute in the last 24 hours, and 30,000 per award.
+- Agent awards (`omalvl agent`) and manual adds share a budget of 5,000 XP plus 100 per worked minute in the last 24 hours, and 30,000 per award. A worked minute is one where you were at the keyboard **or an AI agent or local model was measurably working for you** (the daemon sees its CPU time), so work you wait on earns XP too. Each hour counts at most 60 worked minutes.
 - Awards across more than 6 skills in 15 minutes are voided (a sweep across every skill is the botting pattern).
 - The same work can't be awarded twice in a week, and an award needs a real description.
 - A machine "active" for more than 20 of the last 24 hours stops earning measured XP until the pattern breaks.

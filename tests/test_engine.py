@@ -231,6 +231,24 @@ class FairPlay(unittest.TestCase):
             voids += bool(S.grant({k: 300}, why="agent: distinct real work item %d" % i, source="agent").voided)
         self.assertGreaterEqual(voids, 1)
 
+    def test_agent_work_backs_awards(self):
+        """Work you wait on counts: agent CPU minutes raise the budget; no work, no budget."""
+        self.assertNotEqual(S.grant({"commits": 12_000}, why="agent [expert]: shipped the release", source="agent").voided, "")
+        S.grant({}, why="agents working", events={"agent_work_min": 60.0})
+        S.grant({}, why="agents working", events={"agent_work_min": 60.0})       # same hour: capped at 60
+        d = S.load()
+        self.assertEqual(anticheat.worked_minutes(d["fair"]), 60)
+        r = S.grant({"commits": 10_000}, why="agent [expert]: shipped the release, second try", source="agent")
+        self.assertEqual(r.voided, "")
+
+    def test_keyboard_and_agent_minutes_do_not_double(self):
+        f = anticheat.blank()
+        now = time.time()
+        anticheat.note_active(f, 50, now)
+        anticheat.note_work(f, 50, now)
+        self.assertEqual(anticheat.worked_minutes(f, now=now), 60)
+        self.assertEqual(anticheat.active_minutes(f, now=now), 50)      # the around-the-clock hold ignores agents
+
     def test_single_award_cap(self):
         self.activity(20)
         self.assertNotEqual(S.grant({"shell": 10_000_000}, why="manual", source="manual").voided, "")

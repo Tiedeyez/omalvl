@@ -1017,6 +1017,8 @@ def grant(amounts=None, quests=(), why="by hand", events=None, rates=None, token
         now = time.time()
         if events.get("active_min"):
             anticheat.note_active(fair, events["active_min"], now)
+        if events.get("agent_work_min"):
+            anticheat.note_work(fair, events["agent_work_min"], now)
         if events and amounts and not anticheat.measured_ok(fair, now):
             res.voided = "activity around the clock (more than %d h of the last 24)" % (anticheat.ACTIVE_DAY_MAX // 60)
             fair["voided"] += 1
@@ -1622,7 +1624,8 @@ def fair_info(data):
     return {"verified": not bad, "unverified": [SKILL_BY_KEY[k][1] for k in bad if k in SKILL_BY_KEY],
             "voided": f["voided"], "voidedXp": f["voidedXp"], "hold": bool(f.get("measuredHold")),
             "active24h": round(anticheat.active_minutes(f)), "imported": bool(data["meta"].get("imported")),
-            "budgetLeft": max(0, int(anticheat.BASE + anticheat.PER_ACTIVE_MIN * anticheat.active_minutes(f)
+            "worked24h": round(anticheat.worked_minutes(f)),
+            "budgetLeft": max(0, int(anticheat.budget(f)
                                      - sum(a["xp"] for a in f["awards"] if a["ok"] and time.time() - a["t"] < anticheat.DAY))),
             "recentVoids": [{"t": a["t"], "skill": a["skill"], "xp": a["xp"], "why": a["void"]} for a in voids]}
 
@@ -1634,7 +1637,8 @@ def cmd_fair(argv):
         print(json.dumps(fp))
         return 0
     print("Fair play: %s" % ("verified" if fp["verified"] else "UNVERIFIED (edited by hand: %s)" % ", ".join(fp["unverified"])))
-    print("Active in the last 24 h: %d min  ·  award budget left: %s XP" % (fp["active24h"], format(fp["budgetLeft"], ",")))
+    print("Last 24 h: %d min at the keyboard, %d worked min (incl. agents)  ·  award budget left: %s XP"
+          % (fp["active24h"], fp["worked24h"], format(fp["budgetLeft"], ",")))
     print("Voided: %d award(s), %s XP%s" % (fp["voided"], format(fp["voidedXp"], ","),
           "  ·  measured XP on hold (activity around the clock)" if fp["hold"] else ""))
     for v in fp["recentVoids"]:
@@ -2634,7 +2638,7 @@ def maybe_weekly_report():
 
 TICK = 30
 FLUSH = 120       # routine (passive) xp is saved at most this often; anything notable saves at once
-QUIET_EVENTS = {"focus", "active_min", "game_min"}
+QUIET_EVENTS = {"focus", "active_min", "game_min", "agent_work_min"}
 CAP = 60          # max xp per tick for each continuous skill, and for Shell/Tiling actions
 ACTIVE_IRQS = 15  # i8042 interrupts per tick that count as "at the computer"
 
@@ -2775,6 +2779,8 @@ def daemon():
             if ran > 0.2:
                 xp["models"] = min(R["tick_cap"], ran * R["models_cpu_s"])
                 events["model_cpu_s"] += ran
+            if worked + ran > 0.2:              # an agent or model did real work this tick
+                events["agent_work_min"] += TICK / 60.0
 
             # --- pacman
             inst, upg = pacman_counts()

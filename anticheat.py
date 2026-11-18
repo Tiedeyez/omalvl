@@ -12,9 +12,12 @@ Two kinds of XP:
 
   unmeasured  awards from agents (`omalvl agent`), manual adds (`omalvl add`) and claimed
               tasks (`omalvl task`). Each one must be backed by real recent use:
-              * the XP awarded in any 24 hours is at most BASE + PER_ACTIVE_MIN x active minutes
-                in those hours (about 6,000 XP per active hour: a full day's real project
-                easily fits; "max all my stats" does not);
+              * the XP awarded in any 24 hours is at most BASE + PER_ACTIVE_MIN x worked minutes
+                in those hours (about 6,000 XP per worked hour: a full day's real project
+                easily fits; "max all my stats" does not). A worked minute is one where you were
+                at the keyboard OR an AI agent / local model was measurably working for you (its
+                CPU time, seen by the daemon), so work you wait on counts too. Each clock hour
+                counts at most 60 worked minutes, however the two overlap;
               * a single award is at most MAX_SINGLE (the master tier);
               * at most BURST_SKILLS different skills in BURST_WINDOW (a sweep across every
                 skill is the botting pattern, real work touches a few);
@@ -44,7 +47,7 @@ KEEP_AWARDS = 400
 
 
 def blank():
-    return {"active": {}, "awards": [], "voided": 0, "voidedXp": 0, "sources": {}, "baseline": None,
+    return {"active": {}, "work": {}, "awards": [], "voided": 0, "voidedXp": 0, "sources": {}, "baseline": None,
             "measuredHold": False}
 
 
@@ -60,6 +63,30 @@ def note_active(fair, minutes, now=None):
     cutoff = int(now // 3600) - 48
     for k in [k for k in fair["active"] if int(k) < cutoff]:
         del fair["active"][k]
+
+
+def note_work(fair, minutes, now=None):
+    """The daemon reports minutes in which an agent or local model was measurably working."""
+    now = now or time.time()
+    w = fair.setdefault("work", {})
+    h = _hour(now)
+    w[h] = round(min(60.0, w.get(h, 0) + minutes), 2)
+    cutoff = int(now // 3600) - 48
+    for k in [k for k in w if int(k) < cutoff]:
+        del w[k]
+
+
+def worked_minutes(fair, seconds=DAY, now=None):
+    """Minutes backed by real work: per clock hour, at most 60 of (at the keyboard + agents working)."""
+    now = now or time.time()
+    first = int((now - seconds) // 3600)
+    work = fair.get("work") or {}
+    hours = {k for k in list(fair["active"]) + list(work) if int(k) >= first}
+    return sum(min(60.0, fair["active"].get(k, 0) + work.get(k, 0)) for k in hours)
+
+
+def budget(fair, now=None):
+    return BASE + PER_ACTIVE_MIN * worked_minutes(fair, DAY, now)
 
 
 def active_minutes(fair, seconds=DAY, now=None):
@@ -97,10 +124,10 @@ def check_award(fair, skill, xp, reason, kind, now=None):
     if len(burst) > BURST_SKILLS:
         return False, "awards across %d skills in %d minutes" % (len(burst), BURST_WINDOW // 60)
     spent = sum(a["xp"] for a in recent if now - a["t"] < DAY)
-    budget = BASE + PER_ACTIVE_MIN * active_minutes(fair, DAY, now)
-    if spent + xp > budget:
+    limit = budget(fair, now)
+    if spent + xp > limit:
         return False, "more than the last 24 hours of real use backs up (%s of %s XP)" % (
-            format(int(spent + xp), ","), format(int(budget), ","))
+            format(int(spent + xp), ","), format(int(limit), ","))
     return True, ""
 
 
