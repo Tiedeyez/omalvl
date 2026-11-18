@@ -136,6 +136,93 @@ class SaveSafety(unittest.TestCase):
         self.assertEqual(S.load()["xp"]["shell"], 123_456)
 
 
+class HistoryPrivacy(unittest.TestCase):
+    """v1.0.4 fixes: shell history keeps only allowlisted names; writes are private and symlink-safe."""
+
+    def setUp(self):
+        fresh()
+
+    def test_arguments_and_secrets_are_not_counted(self):
+        ev = S.command_events([
+            "curl -H 'Authorization: Bearer sk-SECRET' https://x",
+            "API_KEY=sk-SECRET env FOO=bar python3 run.py",
+            "sudo pacman -Qi git",
+            "mysecrettool --password hunter2",
+            "git log | awk '{print $1}' && hunter2cmd",
+        ])
+        keys = [k for k in ev if k.startswith(("cmd:", "cmd2:"))]
+        self.assertTrue(all(k in S.SAFE_HISTORY_STATS for k in keys), keys)
+        self.assertNotIn("SECRET", json.dumps(ev))
+        self.assertNotIn("hunter2", json.dumps(ev))
+        self.assertEqual(ev["cmd:python3"], 1)               # env and assignments stripped
+        self.assertEqual(ev["cmd2:pacman -qi"], 1)           # sudo stripped, pair kept
+        self.assertEqual((ev["cmd:git"], ev["cmd2:git log"], ev["cmd:awk"]), (1, 1, 1))
+        self.assertEqual(ev["cmd"], 5)                       # every command still counts toward the total
+
+    def test_every_quest_counter_is_allowlisted(self):
+        src = "".join(open(os.path.join(ROOT, f)).read() for f in ("content.py", "skills.py", "wiki.py"))
+        keys = set(re.findall(r"[\"'](cmd2?:[^\"']+)[\"']", src))
+        self.assertTrue(keys)
+        self.assertEqual(sorted(k for k in keys if k not in S.SAFE_HISTORY_STATS), [],
+                         "add these to SAFE_HISTORY_COMMANDS/PAIRS or the quest never progresses")
+
+    def test_legacy_counters_scrubbed_from_state_and_backups(self):
+        d = S.load()
+        d["xp"]["shell"] = 1_000
+        S.save(d, allow_drop=True)
+        st = S._read_state(S.STATE)
+        st["stats"].update({"cmd:git": 4, "cmd:mysecret": 2, "cmd2:curl sk-SECRET": 1})
+        with open(S.STATE, "w") as f:
+            json.dump(st, f)
+        os.makedirs(S.BACKUP_DIR, exist_ok=True)
+        old = os.path.join(S.BACKUP_DIR, "skills-2000-01-01.json")
+        with open(old, "w") as f:
+            json.dump(st, f)
+        d = S.load()
+        self.assertEqual(d["stats"].get("cmd:git"), 4)
+        self.assertNotIn("cmd:mysecret", d["stats"])
+        S._LEGACY_BACKUPS_SCRUBBED = False
+        S.save(d)
+        for path in (S.STATE, S.BACKUP, old):
+            with open(path) as f:
+                text = f.read()
+            self.assertNotIn("SECRET", text, path)
+            self.assertNotIn("mysecret", text, path)
+        self.assertIn("cmd:git", open(old).read())
+
+    def test_scrub_skips_symlinked_backups(self):
+        target = os.path.join(TMP, "outside.json")
+        with open(target, "w") as f:
+            json.dump({"stats": {"cmd:mysecret": 1}}, f)
+        os.makedirs(S.BACKUP_DIR, exist_ok=True)
+        link = os.path.join(S.BACKUP_DIR, "skills-link.json")
+        if os.path.lexists(link):
+            os.remove(link)
+        os.symlink(target, link)
+        try:
+            S._LEGACY_BACKUPS_SCRUBBED = False
+            S.save(S.load())
+            self.assertTrue(os.path.islink(link))
+            with open(target) as f:
+                self.assertIn("cmd:mysecret", f.read())      # never written through the link
+        finally:
+            os.remove(link)
+
+    def test_atomic_write_is_private_and_replaces_symlink(self):
+        d = os.path.join(TMP, "aw")
+        os.makedirs(d, exist_ok=True)
+        victim = os.path.join(d, "victim.txt")
+        with open(victim, "w") as f:
+            f.write("keep")
+        out = os.path.join(d, "out.json")
+        os.symlink(victim, out + ".tmp")                     # the old predictable tmp name
+        S._atomic_write(out, "{}")
+        self.assertEqual(open(victim).read(), "keep")
+        self.assertEqual(os.stat(out).st_mode & 0o777, 0o600)
+        self.assertEqual(open(out).read(), "{}")
+        self.assertEqual(sorted(os.listdir(d)), ["out.json", "out.json.tmp", "victim.txt"])  # no leftovers
+
+
 class Mechanics(unittest.TestCase):
     def setUp(self):
         fresh()

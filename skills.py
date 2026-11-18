@@ -2081,11 +2081,8 @@ _HISTORY_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 def _history_words(segment):
     """Return a safe command head; discard leading sudo/env and assignments."""
     words = segment.split()
-    if words and words[0].lower() == "sudo":
-        words = words[1:]
-    if words and words[0].lower() == "env":
-        words = words[1:]
-    while words and _HISTORY_ASSIGNMENT.match(words[0]):
+    # any order: `sudo env A=1 x`, `A=1 env B=2 x`, `env sudo x`
+    while words and (words[0].lower() in ("sudo", "env") or _HISTORY_ASSIGNMENT.match(words[0])):
         words = words[1:]
     return [word.lower() for word in words[:2]]
 
