@@ -336,6 +336,27 @@ SAFE_HISTORY_STATS = frozenset(
 _LEGACY_BACKUPS_SCRUBBED = False
 
 
+def _scrub_jobs(jobs):
+    """Older builds saved a job's full command line; keep only the program name."""
+    changed = False
+    for job in jobs if isinstance(jobs, list) else ():
+        if isinstance(job, dict) and isinstance(job.get("cmd"), str):
+            safe = _job_label(job["cmd"]) if not job["cmd"].endswith(" ...") else job["cmd"]
+            if safe != job["cmd"]:
+                job["cmd"] = safe
+                changed = True
+    return changed
+
+
+def _scrub_private(data):
+    """Everything persisted from shell input: history counters and job commands."""
+    if not isinstance(data, dict):
+        return False
+    a = _scrub_history_stats(data.get("stats"))
+    b = _scrub_jobs(data.get("jobs"))
+    return a or b
+
+
 def _scrub_history_stats(stats):
     """Keep only fixed, safe shell-history labels; older builds retained arbitrary prefixes."""
     if not isinstance(stats, dict):
@@ -394,7 +415,7 @@ def load():
         data["fair"].setdefault(k, v)
     if data["fair"]["baseline"] is None:          # an account from before fair play: start the books now
         anticheat.set_baseline(data["fair"], data["xp"])
-    _scrub_history_stats(data["stats"])
+    _scrub_private(data)
     return data
 
 
@@ -402,7 +423,7 @@ def save(data, allow_drop=False):
     # Persist the enriched view (skills, questLog, diary, ...) alongside the raw
     # state so the shell widget renders straight from the file.
     os.makedirs(os.path.dirname(STATE), exist_ok=True)
-    _scrub_history_stats(data.get("stats"))
+    _scrub_private(data)
     payload = {k: data[k] for k in STATE_KEYS}
     payload.update(snapshot(data))
     text = json.dumps(payload)
@@ -454,7 +475,7 @@ def snapshot_file(tag):
     os.makedirs(BACKUP_DIR, exist_ok=True)
     out = os.path.join(BACKUP_DIR, "skills-%s-%s.json" % (tag, time.strftime("%Y%m%d-%H%M%S")))
     data = _read_state(STATE)
-    _scrub_history_stats(data.get("stats"))
+    _scrub_private(data)
     _atomic_write(out, json.dumps(data))
     return out
 
@@ -489,7 +510,7 @@ def _scrub_legacy_backup(path):
         data = json.loads(read_capped(path, 4 * 1024 * 1024))
     except (OSError, ValueError):
         return False
-    if not isinstance(data, dict) or not _scrub_history_stats(data.get("stats")):
+    if not isinstance(data, dict) or not _scrub_private(data):
         return True
     _atomic_write(path, json.dumps(data))
     return True
@@ -2090,6 +2111,18 @@ def _history_words(segment):
     return [word.lower() for word in words[:2]]
 
 
+def _job_label(command):
+    """What a job slot shows and saves: the program name only. Arguments can hold secrets and
+    the state file is copied into backups (and off-machine), so they are never persisted."""
+    words = command.split()
+    while words and (words[0].lower() in ("sudo", "env") or _HISTORY_ASSIGNMENT.match(words[0])):
+        words = words[1:]
+    if not words:
+        return "job"
+    name = os.path.basename(words[0])[:40] or "job"
+    return name + (" ..." if len(words) > 1 else "")
+
+
 def pacman_counts():
     """Installs and upgrades in pacman's log, streamed line by line (never loaded whole)."""
     inst = upg = 0
@@ -2539,7 +2572,7 @@ def cmd_run(argv):
         slot, stamp = free[0], int(time.time())
         base = os.path.join(JOB_DIR, "%s-%d" % (slot.lower(), stamp))
         if argv[0] == "--pid":
-            pid, label = int(argv[1]), " ".join(argv[2:]) or "pid %s" % argv[1]
+            pid, label = int(argv[1]), " ".join(argv[2:]) or "pid-%s" % argv[1]
             if not _alive(pid):
                 print("No process %d is running." % pid)
                 return 1
@@ -2547,19 +2580,22 @@ def cmd_run(argv):
         else:
             label = " ".join(argv)
             exitf = base + ".exit"
-            with open(base + ".log", "w") as log:
+            log_fd = os.open(base + ".log", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+                             | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(log_fd, "w") as log:
                 # the user's own command runs in a shell (it is theirs to type); our paths are arguments
-                proc = subprocess.Popen([tool("sh"), "-c", '/usr/bin/sh -c "$1"; echo $? > "$2"', "omalvl-job",
+                proc = subprocess.Popen([tool("sh"), "-c",
+                                         '/usr/bin/sh -c "$1"; rc=$?; (umask 077; echo $rc > "$2")', "omalvl-job",
                                          label, exitf],
                                         stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                         start_new_session=True, cwd=os.getcwd())
             pid = proc.pid
-        data["jobs"].append({"slot": slot, "cmd": label, "planted": stamp, "pid": pid,
+        data["jobs"].append({"slot": slot, "cmd": _job_label(label), "planted": stamp, "pid": pid,
                                 "exitFile": exitf, "log": base + ".log" if exitf else None,
                                 "done": None, "exit": None})
         save(data)
     print("Queued %s in job slot %s. Collect it with omalvl collect when it's done."
-          % ("'%s'" % label, slot))
+          % ("'%s'" % _job_label(label), slot))
 
 
 def check_jobs():
@@ -2757,8 +2793,7 @@ def maybe_weekly_report():
     text = week_report()
     out = os.path.join(os.path.dirname(STATE), "weekly", week + ".txt")
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    with open(out, "w") as f:
-        f.write(text + "\n")
+    _atomic_write(out, text + "\n")
     notify("Your week in Omarchy", text.split("\n", 1)[1] if "\n" in text else text)
 
 

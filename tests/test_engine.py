@@ -223,6 +223,45 @@ class HistoryPrivacy(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(d)), ["out.json", "out.json.tmp", "victim.txt"])  # no leftovers
 
 
+class JobPrivacy(unittest.TestCase):
+    """A queued job's command line never reaches the state file or its backups."""
+
+    def setUp(self):
+        fresh()
+
+    def test_job_label_keeps_only_the_program(self):
+        self.assertEqual(S._job_label("curl -H 'Authorization: Bearer sk-SECRET' https://x"), "curl ...")
+        self.assertEqual(S._job_label("TOKEN=sk-SECRET sudo env A=1 /usr/bin/make -j8"), "make ...")
+        self.assertEqual(S._job_label("make"), "make")
+        self.assertEqual(S._job_label("   "), "job")
+
+    def test_run_saves_no_arguments_and_private_files(self):
+        self.assertIn(S.cmd_run(["/usr/bin/true", "--password=hunter2"]), (None, 0))
+        for path in (S.STATE, S.BACKUP):
+            with open(path) as f:
+                self.assertNotIn("hunter2", f.read(), path)
+        job = S.load()["jobs"][-1]
+        self.assertEqual(job["cmd"], "true ...")
+        self.assertEqual(os.stat(job["log"]).st_mode & 0o777, 0o600)
+        for _ in range(200):                                  # the job is /usr/bin/true: gone in ms
+            if os.path.exists(job["exitFile"]) and open(job["exitFile"]).read().strip():
+                break
+            time.sleep(0.01)
+        self.assertEqual(os.stat(job["exitFile"]).st_mode & 0o777, 0o600)
+
+    def test_legacy_job_commands_scrubbed(self):
+        st = S._read_state(S.STATE)
+        st["jobs"] = [{"slot": "Alpha", "cmd": "curl -u admin:hunter2 https://x", "planted": 1, "pid": 1,
+                       "exitFile": None, "log": None, "done": None, "exit": None}]
+        with open(S.STATE, "w") as f:
+            json.dump(st, f)
+        S.save(S.load())
+        for path in (S.STATE, S.BACKUP):
+            with open(path) as f:
+                self.assertNotIn("hunter2", f.read(), path)
+        self.assertEqual(S.load()["jobs"][0]["cmd"], "curl ...")
+
+
 class DailySysop(unittest.TestCase):
     """1.0.0-1.0.4: sysop_today raised KeyError on any save, so the daemon's daily block
     (Sysop, streak, job checks) aborted every active minute."""
