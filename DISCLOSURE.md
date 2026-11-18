@@ -1,0 +1,95 @@
+# Disclosure
+
+What OmaScape puts on your computer and what it looks at, written from the source at this commit.
+
+## What it is and what runs it
+
+OmaScape is an Omarchy shell plugin of kind `bar-widget`. Its entry point, `Panel.qml`, runs inside `omarchy-shell` (Quickshell) **with your user account's full access, unsandboxed**, like every Omarchy plugin. It loads only after you add it to your bar.
+
+`Panel.qml` starts one long-running helper, `skills.py daemon` (Python standard library only), which does the measuring. By default, activity data stays local. If you configure an offsite backup folder, OmaScape writes copies there; that folder may be synced by another service.
+
+## What it needs
+
+- Omarchy's shell (Quickshell with Qt 6).
+- `/usr/bin/python3` (any Python 3.9+). No Python packages beyond the standard library.
+- Optional: `tldr` and a local model server on `127.0.0.1:8080` for the Sysop's "Explain it" button.
+
+## What it reads, and why
+
+The daemon wakes every 30 seconds. Two background threads watch Hyprland's events and new processes.
+
+| What | How | What is kept |
+|---|---|---|
+| Keyboard and touchpad interrupt counts | `/proc/interrupts` (the `i8042` line) | Whether you were active this tick. No keys, no timings. |
+| CPU, disk and network totals | `/proc/stat`, `/proc/diskstats`, `/proc/net/dev` | Byte and tick counters, turned into XP. |
+| Window events (open, close, focus, workspace, fullscreen, float, group) | Hyprland's event socket (`.socket2.sock`) | Counts per event type. No window titles. |
+| The focused window's class and the cursor position | `hyprctl activewindow -j`, `hyprctl cursorpos -j` | Whether a game window is focused (classes in the built-in list or your `games` setting), and whether the pointer moved. Neither is stored. |
+| New processes, six times a second | `/proc/<pid>/cmdline` and `/proc/<pid>/stat` of processes that just appeared | One event name when it is an Omarchy keybind command (`omarchy-toggle-nightlight` → `toggle:nightlight`), a known tool (`nvim`, `btop`) or an AI agent / local model runtime. Arguments are not stored. |
+| Running AI agents' and local models' CPU time | `ps -eo comm=`, `/proc/<pid>/stat` | CPU seconds, turned into Agents XP (agent CLIs) and Models XP (local runtimes). |
+| Shell history: `~/.bash_history`, `~/.zsh_history`, `~/.local/share/fish/fish_history` | Read from the last position onwards, at most 1 MiB per tick | Counts, plus the **first word and first two words** of each command (for example `git` and `git push`) as lifetime counters, so quests and challenges can tell what you've learned. Full command lines are not stored. Turn it off with `"shellHistory": false`. |
+| Package installs and upgrades | `/var/log/pacman.log`, streamed line by line | Two counts. |
+| Chromium visit count | `~/.config/chromium/*/History`, opened read-only with SQLite (`immutable=1`) | One number: the visit count. No URLs, no titles. **Off unless you set `"browserHistory": true`.** |
+| Size of `~/Downloads` | Directory sizes | One number. File names are not stored. |
+| New screenshots | Names matching `~/Pictures/screenshot-*` | A count. |
+| Git commits | `git rev-list --count HEAD` and `git show --numstat HEAD` in each repo directly inside `~/Work`, `~/Projects`, `~/src`, `~/code`, `~/dev`, `~/git` (or your `repos` setting) | Commit counts and how many files changed, were added or were removed. The newest commit's file paths are matched against a list of config paths (for dotfile relics) and then discarded. No code or messages are read. |
+| The theme | `~/.local/state/omarchy/current/theme/colors.toml` (the first 64 KiB, `name = "#rrggbb"` lines only) and `theme.name` | Colours for the pixel art; a count of theme changes; the theme name and minutes worn (for seasons and stamps). |
+| Config saves | File modification times (never contents) in `~/.config/` `hypr`, `omarchy` (not `plugins`), `alacritty`, `ghostty`, `kitty`, `foot`, `nvim`, `tmux`, `fish`, `mise`, `btop`, `fastfetch` and `starship.toml`; at most 3,000 files, three folders deep | How many files were saved this tick, turned into Theming XP. |
+| The focused monitor's size | `hyprctl monitors -j`, only when you run `omascape wallpaper` | The size of the PNG to draw. |
+| Its own files | `~/.config/omascape/config.json` (at most 64 KiB), `~/.local/state/omascape/state.json` and backups (at most 4 MiB per file) | Settings and your progress. The panel receives a display snapshot from the helper, not the raw save file. |
+
+OmaScape reads only the paths listed above. It does not read general documents, window titles or contents, the clipboard, or keystrokes. The shell-history exception is deliberate: it reads appended history lines and retains only command counts plus the first one or two words; full command lines are not stored. It does not read browser URLs. The local-model request described below is the only HTTP request.
+
+## What it writes
+
+| Where | What |
+|---|---|
+| `~/.local/state/omascape/state.json` (+ `.bak`, `.lock`, `.lock.daemon`) | Your progress. Written atomically (fsync'd, then renamed). |
+| `~/.local/state/omascape/backups/` | One copy a day (14 kept), plus a copy before every reset, restore or import. |
+| `~/.local/state/omascape/weekly/` | A short text report each week. |
+| `~/.local/state/omascape/jobs/` | Output and exit codes of jobs you queue with `omascape run`. |
+| The folder named by `offsite` in your config | A daily off-machine copy (60 kept). Off unless you set it. |
+| `~/.local/share/omascape/wiki/` | The offline wiki, only when you run `omascape wiki`. |
+| `~/Pictures/omascape/` (or `--out`) | A wallpaper PNG, only when you run `omascape wallpaper`. Nothing sets it as your background; you run `omarchy-theme-bg-set` yourself. |
+
+## Subprocesses
+
+Commands are launched by an absolute path, preferring `/usr/bin/<name>` and falling back to the resolved helper path when Omarchy installs a tool elsewhere. Ordinary helper arguments are passed as separate arguments, not pasted into a shell command. `omascape run` is the exception by design: it runs the command the user explicitly typed in a separate shell session.
+
+- From the panel: `/usr/bin/python3 -I skills.py daemon` runs as the long-lived sampler; `icons --json` runs at startup, `panel-state` runs every three seconds, `guide <skill> --json` runs when you select a guide, and the action you click runs on demand (`quest`, `contract new|skip`, `token`, `collect`, `skin`, `sysop explain`). The panel receives a bounded display snapshot and never reads the save file directly.
+- From the daemon: `hyprctl`, `ps`, `git`, `notify-send` (level-ups and events).
+- `omascape wallpaper` runs `hyprctl monitors -j` for the screen size.
+- `omascape run <command>` runs **the command you typed** in `sh -c`, in its own session; that is what a job slot is for.
+- `omascape sysop explain` runs `tldr <command>` and, if `local-llm` is installed, `local-llm serve` / `local-llm stop`.
+- `omascape wiki` runs `git log`, `lsblk`, `bash --version`, `pacman -Qq`, `hyprctl version` and `omarchy-theme-current` for its "on this machine" facts, then `xdg-open` on the result (unless `--no-open`).
+
+## Network
+
+The only HTTP request is to `http://127.0.0.1:8080` (a local model on your own machine), and only when you press "Explain it". OmaScape makes no remote HTTP requests and has no telemetry, analytics, account service or auto-update. An optional offsite backup is a filesystem write to the folder you configure, not an HTTP upload; if that folder is synced, the sync service handles transfer.
+
+## Fair play
+
+OmaScape voids XP that real use doesn't back up (agent awards and manual adds above what your recent activity supports, a sweep across many skills at once, repeated awards for the same work, and measured XP from a machine that is "active" around the clock). Every change is tallied by source, and an account whose save was edited by hand shows as **unverified**. All of this is local and readable in `anticheat.py`; nothing is reported anywhere.
+
+## Files that are not part of the running plugin
+
+- `tools/contact_sheet.py`: renders the icons to a PNG with ImageMagick (`magick`), writing only the path you give.
+- `tests/`: unit tests. They use a temporary folder and never touch your real state.
+- `migrate.py`: a local-only importer for the prototype's save format. It is intentionally excluded from the public package; `omascape import` reports that it is unavailable there.
+- `promo/`: the sizzle reel's source, kept out of the plugin repo. The rendered reels are attached to GitHub releases; their music is original and generated by a script (MIT).
+
+## Maintainer and licence
+
+Tiedeyez, MIT licence (see [LICENSE](LICENSE)). All art (icons, pixel font) and all names are original to OmaScape.
+
+## Check it yourself
+
+```bash
+# every subprocess the engine can start:
+grep -nE "subprocess\.(run|Popen)" skills.py wiki.py
+# the only network address:
+grep -n "urlopen\|LLM_URL =" skills.py
+# what the panel runs:
+grep -nE "command|run\(\[" Panel.qml
+# the tests (temporary state only):
+python3 -m unittest discover -s tests
+```

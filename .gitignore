@@ -1,0 +1,31 @@
+# Private working files and local-only migration support
+/HANDOFF.md
+/migrate.py
+/tools/rename_ip.py
+/tools/rename_ip2.py
+**/HANDOFF.md
+**/CLAUDE.md
+**/AGENTS.md
+
+# Promo source, personal demo data, and third-party media are maintained locally
+# and reviewed separately before any public release artifact is attached.
+/promo/
+
+# Python build/test output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local tool/render state
+node_modules/
+.hyperframes/
+.media/
+.waveform-cache/
+dist/
+build/
+*.mp4
+*.webm
