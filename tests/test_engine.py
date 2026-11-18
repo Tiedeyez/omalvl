@@ -186,6 +186,13 @@ class Mechanics(unittest.TestCase):
         self.assertEqual(head[:8], b"\x89PNG\r\n\x1a\n")
         self.assertEqual(int.from_bytes(head[16:20], "big"), 640)
 
+    def test_renamed_skills_resolve(self):
+        self.assertEqual(S.skill_key("contracts"), "editing")
+        self.assertEqual(S.skill_key("storage"), "workload")
+        self.assertEqual(S.skill_key("Presence"), "focus")
+        self.assertEqual(S.skill_key("THM"), "theming")
+        self.assertTrue(all(v in S.SKILL_BY_KEY for v in S.RENAMED.values()))
+
     def test_skin_needs_rating(self):
         self.assertEqual(S.cmd_skin(["neon"]), 1)
         self.assertEqual(S.cmd_skin(["plain"]), 0)

@@ -1195,18 +1195,27 @@ def announce(res):
         print("LEVELUP %s %d" % (key, hi))
 
 
+# Skill names from the 0.x prototype, so scripts and agents written against them keep working.
+RENAMED = {"presence": "focus", "play": "focus", "stamina": "focus", "charging": "focus",
+           "compute": "workload", "storage": "workload", "network": "downloads", "contracts": "editing",
+           "creating": "editing", "pruning": "editing", "upgrading": "packages"}
+
+
 def skill_key(word):
     word = (word or "").lower()
     if word in SKILL_BY_KEY:
         return word
+    if word in RENAMED:
+        return RENAMED[word]
+    hit = next((k for k, s in SKILL_BY_KEY.items() if s[1].lower() == word or s[2].lower() == word), None)
+    if hit:
+        return hit
     try:
         import migrate                              # optional, local: names from an older save format
     except ImportError:
         return None
-    if word in migrate.SKILL_KEYS:
-        return migrate.SKILL_KEYS[word]
-    return next((k for k, s in SKILL_BY_KEY.items()
-                 if s[1].lower() == word or s[2].lower() == word), None)
+    old = migrate.SKILL_KEYS.get(word)
+    return RENAMED.get(old, old) if old else None
 
 
 def fmt_dur(sec):
