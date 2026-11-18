@@ -88,7 +88,7 @@ Optional, in `~/.config/omalvl/config.json`:
 | `repos` | `~/Work/*`, `~/Projects/*`, `~/src/*`, `~/code/*`, `~/dev/*`, `~/git/*` | Where commits (and dotfile relics) are counted. |
 | `offsite` | off | A folder synced to another machine for a daily off-machine copy of your save. |
 | `browserHistory` | `false` | Count Chromium visits (a number only) for the Browsing skill. |
-| `shellHistory` | `true` | Read your shell history (first words only) for Shell, quests and challenges. |
+| `shellHistory` | `true` | Read shell history for command counts; only allowlisted command names and fixed safe pairs are stored, never arguments. |
 | `games` | a built-in list of emulators and launchers | Extra window classes that count as playing (Focus). |
 | `reduceMotion` | `false` | Turn off the pixel dissolve and hover lift. |
 
@@ -108,7 +108,7 @@ There is no admin override in the public release. `omalvl add` and `omalvl agent
 
 ## Privacy
 
-OmaLvL processes activity locally. It stores counts and small command prefixes from shell history; it does not send activity anywhere. If you enable offsite backups, it writes save copies to the folder you choose, which may be synced elsewhere. The optional Sysop explanation uses a local model endpoint only when you press its button. [DISCLOSURE.md](DISCLOSURE.md) lists the exact files, data and subprocesses.
+OmaLvL processes activity locally. It stores command counts and a fixed allowlist of safe command names and subcommands; arguments and environment assignments are not retained. On the first save after updating, legacy arbitrary prefixes are removed from the current state and up to 256 app backup JSON files (64 MiB total). If older backups exceed those limits, OmaLvL warns that some need manual review or removal. If you enable offsite backups, it writes private save copies to the folder you choose, which may be synced elsewhere. The optional Sysop explanation uses a local model endpoint only when you press its button. [DISCLOSURE.md](DISCLOSURE.md) lists the exact files, data and subprocesses.
 
 ## Develop
 

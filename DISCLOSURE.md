@@ -26,7 +26,7 @@ The daemon wakes every 30 seconds. Two background threads watch Hyprland's event
 | The focused window's class and the cursor position | `hyprctl activewindow -j`, `hyprctl cursorpos -j` | Whether a game window is focused (classes in the built-in list or your `games` setting), and whether the pointer moved. Neither is stored. |
 | New processes, six times a second | `/proc/<pid>/cmdline` and `/proc/<pid>/stat` of processes that just appeared | One event name when it is an Omarchy keybind command (`omarchy-toggle-nightlight` → `toggle:nightlight`), a known tool (`nvim`, `btop`) or an AI agent / local model runtime. Arguments are not stored. |
 | Running AI agents' and local models' CPU time | `ps -eo comm=`, `/proc/<pid>/stat` | CPU seconds, turned into Agents XP (agent CLIs) and Models XP (local runtimes). |
-| Shell history: `~/.bash_history`, `~/.zsh_history`, `~/.local/share/fish/fish_history` | Read from the last position onwards, at most 1 MiB per tick | Counts, plus the **first word and first two words** of each command (for example `git` and `git push`) as lifetime counters, so quests and challenges can tell what you've learned. Full command lines are not stored. Turn it off with `"shellHistory": false`. |
+| Shell history: `~/.bash_history`, `~/.zsh_history`, `~/.local/share/fish/fish_history` | Read from the last position onwards, at most 1 MiB per tick | Command counts, plus names from a fixed allowlist and fixed safe pairs (for example `git` and `git log`). Arbitrary words, arguments and environment assignments are not stored. On the first save after updating, old arbitrary `cmd:` / `cmd2:` counters are removed from state and up to 256 app backup JSON files (64 MiB total); if this limit is exceeded, the program warns that older files need manual review or removal. Turn it off with `"shellHistory": false`. |
 | Package installs and upgrades | `/var/log/pacman.log`, streamed line by line | Two counts. |
 | Chromium visit count | `~/.config/chromium/*/History`, opened read-only with SQLite (`immutable=1`) | One number: the visit count. No URLs, no titles. **Off unless you set `"browserHistory": true`.** |
 | Size of `~/Downloads` | Directory sizes | One number. File names are not stored. |
@@ -37,17 +37,17 @@ The daemon wakes every 30 seconds. Two background threads watch Hyprland's event
 | The focused monitor's size | `hyprctl monitors -j`, only when you run `omalvl wallpaper` | The size of the PNG to draw. |
 | Its own files | `~/.config/omalvl/config.json` (at most 64 KiB), `~/.local/state/omalvl/state.json` and backups (at most 4 MiB per file) | Settings and your progress. The panel receives a display snapshot from the helper, not the raw save file. |
 
-OmaLvL reads only the paths listed above. It does not read general documents, window titles or contents, the clipboard, or keystrokes. The shell-history exception is deliberate: it reads appended history lines and retains only command counts plus the first one or two words; full command lines are not stored. It does not read browser URLs. The local-model request described below is the only HTTP request.
+OmaLvL reads only the paths listed above. It does not read general documents, window titles or contents, the clipboard, or keystrokes. The shell-history exception is deliberate: it reads appended history lines, retains command counts and only allowlisted command names or fixed safe pairs, and discards arguments. It does not read browser URLs. The local-model request described below is the only HTTP request.
 
 ## What it writes
 
 | Where | What |
 |---|---|
-| `~/.local/state/omalvl/state.json` (+ `.bak`, `.lock`, `.lock.daemon`) | Your progress. Written atomically (fsync'd, then renamed). |
+| `~/.local/state/omalvl/state.json` (+ `.bak`, `.lock`, `.lock.daemon`) | Your progress. State and backup files are written atomically with private mode `0600` (fsync'd, then renamed). |
 | `~/.local/state/omalvl/backups/` | One copy a day (14 kept), plus a copy before every reset, restore or import. |
 | `~/.local/state/omalvl/weekly/` | A short text report each week. |
 | `~/.local/state/omalvl/jobs/` | Output and exit codes of jobs you queue with `omalvl run`. |
-| The folder named by `offsite` in your config | A daily off-machine copy (60 kept). Off unless you set it. |
+| The folder named by `offsite` in your config | A daily off-machine copy (60 kept), written atomically with private mode `0600`. Off unless you set it. |
 | `~/.local/share/omalvl/wiki/` | The offline wiki, only when you run `omalvl wiki`. |
 | `~/Pictures/omalvl/` (or `--out`) | A wallpaper PNG, only when you run `omalvl wallpaper`. Nothing sets it as your background; you run `omarchy-theme-bg-set` yourself. |
 

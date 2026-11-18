@@ -602,7 +602,7 @@ def page_index(data, snap):
         "Companions hatch at a set level. There are no drop tables in OmaLvL.",
         "The daemon only pays continuous skills while someone is actually at the computer.",
         "Committing your hypr or nvim config to git unearths a dotfile relic.",
-        "Nothing in this game leaves your machine: it reads /proc, /sys, Hyprland, shell history, git and pacman.",
+        "Nothing in this game leaves your machine: shell history contributes command counts and safe command names only.",
         "Local models train Models; agent CLIs train Agents.",
     ]
     fact = facts[datetime.date.today().toordinal() % len(facts)]
@@ -1043,7 +1043,8 @@ catches the short-lived <code>omarchy-*</code> commands that keybinds run.</p>
 <h2 id="privacy">Privacy</h2><p>Everything stays on this machine. The daemon reads only local sources: <code>/proc</code>
 and <code>/sys</code> (CPU, disk, network counters, processes), Hyprland's socket, your shell history file, file times in
 a few config folders, git repos in your configured folders, the pacman log, the Chromium history count (opt-in) and
-<code>~/Downloads</code> size. It makes no network calls. State: <code>~/.local/state/omalvl/state.json</code>.</p>""" % (
+<code>~/Downloads</code> size. Shell history contributes command counts plus allowlisted names and fixed safe pairs; arguments are discarded.
+It makes no network calls. State: <code>~/.local/state/omalvl/state.json</code>.</p>""" % (
         S.TICK, S.ACTIVE_IRQS, S.R["tick_cap"], int(C.SEASON_BONUS * 100), int(C.UPDATE_DAY_BONUS * 100), S.FLUSH)
     write("mechanics.html", "Mechanics", body, [("Main page", "index.html")], "tick activity privacy saving boosts")
 

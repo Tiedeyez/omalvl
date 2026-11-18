@@ -5,7 +5,7 @@ Everything that "detects" something refers to an *event key*. The daemon
 counts these per tick and keeps lifetime totals in state["stats"]:
 
   cmd, search, script            shell commands (from history)
-  cmd:<word>, cmd2:<two words>   first word / first two words of a command
+  cmd:<word>, cmd2:<two words>   allowlisted command name / fixed safe command pair
   win_open, win_close, focus     Hyprland window events
   ws_switch, fullscreen, float, scratchpad, group, pin, movewindow
   menu:<route>                   an Omarchy menu opened (menu:root, menu:theme, ...)

@@ -56,6 +56,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -317,6 +318,36 @@ def _read_state(path):
     return data
 
 
+SAFE_HISTORY_COMMANDS = frozenset({
+    "awk", "bash", "bun", "cargo", "chmod", "curl", "df", "docker", "du", "fd", "find", "free", "fzf",
+    "git", "go", "history", "hyprctl", "ip", "journalctl", "jq", "local-llm", "lsblk", "lsof", "make", "man",
+    "mise", "npm", "omarchy", "omarchy-reminder", "pacman", "ping", "pnpm", "pytest", "python", "python3",
+    "resolvectl", "rsync", "sed", "sha256sum", "sh", "ss", "strace", "systemctl", "systemd-analyze", "tar",
+    "tldr", "tmux", "which", "xargs", "yarn", "z", "zig",
+})
+SAFE_HISTORY_PAIRS = frozenset({
+    "git diff", "git log", "git stash", "ip route", "journalctl --user", "local-llm serve", "omarchy update",
+    "pacman -qi", "systemctl --user",
+})
+SAFE_HISTORY_STATS = frozenset(
+    {"cmd:" + name for name in SAFE_HISTORY_COMMANDS}
+    | {"cmd2:" + pair for pair in SAFE_HISTORY_PAIRS}
+)
+_LEGACY_BACKUPS_SCRUBBED = False
+
+
+def _scrub_history_stats(stats):
+    """Keep only fixed, safe shell-history labels; older builds retained arbitrary prefixes."""
+    if not isinstance(stats, dict):
+        return False
+    changed = False
+    for key in list(stats):
+        if isinstance(key, str) and key.startswith(("cmd:", "cmd2:")) and key not in SAFE_HISTORY_STATS:
+            del stats[key]
+            changed = True
+    return changed
+
+
 def _recover():
     """The main file is missing or corrupt (e.g. a hard power-off mid-write).
     Never silently start from zero: try the .bak, then the newest daily copy.
@@ -363,6 +394,7 @@ def load():
         data["fair"].setdefault(k, v)
     if data["fair"]["baseline"] is None:          # an account from before fair play: start the books now
         anticheat.set_baseline(data["fair"], data["xp"])
+    _scrub_history_stats(data["stats"])
     return data
 
 
@@ -370,6 +402,7 @@ def save(data, allow_drop=False):
     # Persist the enriched view (skills, questLog, diary, ...) alongside the raw
     # state so the shell widget renders straight from the file.
     os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    _scrub_history_stats(data.get("stats"))
     payload = {k: data[k] for k in STATE_KEYS}
     payload.update(snapshot(data))
     text = json.dumps(payload)
@@ -389,6 +422,7 @@ def save(data, allow_drop=False):
     # (this wiped the account on 2026-11-17). The .bak is written the same way.
     for path in (BACKUP, STATE):
         _atomic_write(path, text)
+    _scrub_legacy_backups()
     day = time.strftime("%Y-%m-%d")
     daily = os.path.join(BACKUP_DIR, "skills-%s.json" % day)
     if not os.path.exists(daily):
@@ -419,26 +453,90 @@ def snapshot_file(tag):
         return None
     os.makedirs(BACKUP_DIR, exist_ok=True)
     out = os.path.join(BACKUP_DIR, "skills-%s-%s.json" % (tag, time.strftime("%Y%m%d-%H%M%S")))
-    with open(STATE) as f:
-        _atomic_write(out, f.read())
+    data = _read_state(STATE)
+    _scrub_history_stats(data.get("stats"))
+    _atomic_write(out, json.dumps(data))
     return out
 
 
 def _atomic_write(path, text):
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        f.write(text)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    directory = os.path.dirname(path) or "."
+    prefix = ".%s." % os.path.basename(path)
+    fd, tmp = tempfile.mkstemp(prefix=prefix, suffix=".tmp", dir=directory)
     try:
-        fd = os.open(os.path.dirname(path), os.O_RDONLY)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+    try:
+        fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_CLOEXEC)
         try:
             os.fsync(fd)
         finally:
             os.close(fd)
     except OSError:
         pass
+
+
+def _scrub_legacy_backup(path):
+    try:
+        data = json.loads(read_capped(path, 4 * 1024 * 1024))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict) or not _scrub_history_stats(data.get("stats")):
+        return True
+    _atomic_write(path, json.dumps(data))
+    return True
+
+
+def _scrub_legacy_backups():
+    """Remove arbitrary old command prefixes from app-owned backup JSON, once per process."""
+    global _LEGACY_BACKUPS_SCRUBBED
+    if _LEGACY_BACKUPS_SCRUBBED:
+        return
+    _LEGACY_BACKUPS_SCRUBBED = True
+    folders = [BACKUP_DIR]
+    offsite = _offsite_dir()
+    if offsite:
+        folders.append(offsite)
+    files_seen = 0
+    bytes_seen = 0
+    incomplete = False
+    for folder in folders:
+        try:
+            with os.scandir(folder) as entries:
+                names = []
+                for entry in entries:
+                    if (entry.name.startswith("skills-") and entry.name.endswith(".json")
+                            and entry.is_file(follow_symlinks=False)):
+                        names.append(entry.name)
+                        if len(names) > 256:
+                            incomplete = True
+                            break
+        except OSError:
+            continue
+        for name in sorted(names):
+            path = os.path.join(folder, name)
+            try:
+                size = os.stat(path, follow_symlinks=False).st_size
+                if files_seen >= 256 or bytes_seen + size > 64 * 1024 * 1024:
+                    incomplete = True
+                    break
+                if not _scrub_legacy_backup(path):
+                    incomplete = True
+                    continue
+                files_seen += 1
+                bytes_seen += size
+            except OSError:
+                incomplete = True
+    if incomplete:
+        sys.stderr.write("omalvl: some older backup files could not be privacy-scrubbed; remove or review them manually\n")
 
 
 class _Lock:
@@ -1944,24 +2042,23 @@ SAIL = re.compile(r"^(sudo\s+)?(ssh|scp|sftp|rsync|mosh|git\s+(push|pull|fetch|c
 def command_events(cmds):
     ev = collections.Counter()
     for c in cmds:
-        words = c.split()
-        if words and words[0] == "sudo":
-            words = words[1:]
+        words = _history_words(c)
         if not words:
             continue
         ev["cmd"] += 1
-        ev["cmd:" + words[0].lower()] += 1
-        if len(words) > 1:
-            ev["cmd2:" + " ".join(words[:2]).lower()] += 1
+        if words[0] in SAFE_HISTORY_COMMANDS:
+            ev["cmd:" + words[0]] += 1
+            pair = " ".join(words)
+            if pair in SAFE_HISTORY_PAIRS:
+                ev["cmd2:" + pair] += 1
         # later commands in a pipeline or chain count too: `history | awk ...` uses awk
         for seg in re.split(r"\s*(?:\|\||&&|\||;)\s*", c)[1:]:
-            w = seg.split()
-            if w and w[0] == "sudo":
-                w = w[1:]
-            if w:
-                ev["cmd:" + w[0].lower()] += 1
-                if len(w) > 1:
-                    ev["cmd2:" + " ".join(w[:2]).lower()] += 1
+            w = _history_words(seg)
+            if w and w[0] in SAFE_HISTORY_COMMANDS:
+                ev["cmd:" + w[0]] += 1
+                pair = " ".join(w)
+                if pair in SAFE_HISTORY_PAIRS:
+                    ev["cmd2:" + pair] += 1
         if SEARCH.match(c):
             ev["search"] += 1
         elif COOK.match(c):
@@ -1978,6 +2075,19 @@ def command_events(cmds):
 
 
 HISTORY_CHUNK_MAX = 1 << 20
+_HISTORY_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _history_words(segment):
+    """Return a safe command head; discard leading sudo/env and assignments."""
+    words = segment.split()
+    if words and words[0].lower() == "sudo":
+        words = words[1:]
+    if words and words[0].lower() == "env":
+        words = words[1:]
+    while words and _HISTORY_ASSIGNMENT.match(words[0]):
+        words = words[1:]
+    return [word.lower() for word in words[:2]]
 
 
 def pacman_counts():
