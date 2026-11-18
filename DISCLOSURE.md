@@ -46,7 +46,7 @@ OmaLvL reads only the paths listed above. It does not read general documents, wi
 | `~/.local/state/omalvl/state.json` (+ `.bak`, `.lock`, `.lock.daemon`) | Your progress. State and backup files are written atomically with private mode `0600` (fsync'd, then renamed). |
 | `~/.local/state/omalvl/backups/` | One copy a day (14 kept), plus a copy before every reset, restore or import. |
 | `~/.local/state/omalvl/weekly/` | A short text report each week, written atomically with private mode `0600`. |
-| `~/.local/state/omalvl/jobs/` | Output and exit codes of jobs you queue with `omalvl run`, private mode `0600`. The state file (and so its backups) keeps only the job's program name, such as `make ...`; its arguments are never saved. |
+| `~/.local/state/omalvl/jobs/` | Output and exit codes of jobs you queue with `omalvl run`, private mode `0600`. The state file (and so its backups) keeps only the job's program name, such as `make ...`; its arguments are never saved. Job labels from releases before 1.0.6 are re-cut to the program name on the next load or save, before any backup is written, and marked with `labelV` so the clean-up never has to guess from the text. |
 | The folder named by `offsite` in your config | A daily off-machine copy (60 kept), written atomically with private mode `0600`. Off unless you set it. |
 | `~/.local/share/omalvl/wiki/` | The offline wiki, only when you run `omalvl wiki`. |
 | `~/Pictures/omalvl/` (or `--out`) | A wallpaper PNG, only when you run `omalvl wallpaper`. Nothing sets it as your background; you run `omarchy-theme-bg-set` yourself. |

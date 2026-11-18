@@ -336,15 +336,26 @@ SAFE_HISTORY_STATS = frozenset(
 _LEGACY_BACKUPS_SCRUBBED = False
 
 
+JOB_LABEL_VERSION = 1   # jobs carrying "labelV" >= this were labelled by _job_label at creation
+
+
 def _scrub_jobs(jobs):
-    """Older builds saved a job's full command line; keep only the program name."""
+    """Older builds saved a job's full command line; keep only the program name.
+
+    Every job without the current "labelV" marker is normalized, whatever its text looks like
+    (a legacy command line can itself end in " ..."). _job_label is idempotent, so a label
+    that was already clean comes out unchanged and only gains the marker."""
     changed = False
     for job in jobs if isinstance(jobs, list) else ():
-        if isinstance(job, dict) and isinstance(job.get("cmd"), str):
-            safe = _job_label(job["cmd"]) if not job["cmd"].endswith(" ...") else job["cmd"]
-            if safe != job["cmd"]:
-                job["cmd"] = safe
-                changed = True
+        if not isinstance(job, dict):
+            continue
+        marked = isinstance(job.get("labelV"), int) and job["labelV"] >= JOB_LABEL_VERSION
+        if marked and isinstance(job.get("cmd"), str):
+            continue
+        cmd = job.get("cmd")
+        job["cmd"] = _job_label(cmd) if isinstance(cmd, str) else "job"
+        job["labelV"] = JOB_LABEL_VERSION
+        changed = True
     return changed
 
 
@@ -2570,7 +2581,8 @@ def cmd_run(argv):
             print("All four job slots are in use. Collect one first (omalvl collect).")
             return 1
         slot, stamp = free[0], int(time.time())
-        base = os.path.join(JOB_DIR, "%s-%d" % (slot.lower(), stamp))
+        # random suffix: a collect + run in the same second reuses the slot and the stamp
+        base = os.path.join(JOB_DIR, "%s-%d-%s" % (slot.lower(), stamp, os.urandom(4).hex()))
         if argv[0] == "--pid":
             pid, label = int(argv[1]), " ".join(argv[2:]) or "pid-%s" % argv[1]
             if not _alive(pid):
@@ -2590,7 +2602,8 @@ def cmd_run(argv):
                                         stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                         start_new_session=True, cwd=os.getcwd())
             pid = proc.pid
-        data["jobs"].append({"slot": slot, "cmd": _job_label(label), "planted": stamp, "pid": pid,
+        data["jobs"].append({"slot": slot, "cmd": _job_label(label), "labelV": JOB_LABEL_VERSION,
+                                "planted": stamp, "pid": pid,
                                 "exitFile": exitf, "log": base + ".log" if exitf else None,
                                 "done": None, "exit": None})
         save(data)

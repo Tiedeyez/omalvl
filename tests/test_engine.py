@@ -261,6 +261,48 @@ class JobPrivacy(unittest.TestCase):
                 self.assertNotIn("hunter2", f.read(), path)
         self.assertEqual(S.load()["jobs"][0]["cmd"], "curl ...")
 
+    def test_legacy_label_ending_in_dots_is_still_scrubbed(self):
+        # Review of 1.0.5: a legacy full command line ending in " ..." was taken as already clean.
+        import tempfile as _tf
+        off = _tf.mkdtemp()
+        old_off = S.OFFSITE
+        S.OFFSITE = os.path.join(off, "omalvl")
+        try:
+            st = S._read_state(S.STATE)
+            st["jobs"] = [{"slot": "Alpha", "cmd": "deploy --token sk-SECRET ...", "planted": 1, "pid": 1,
+                           "exitFile": None, "log": None, "done": None, "exit": None},
+                          {"slot": "Beta", "cmd": "make ...", "planted": 1, "pid": 1, "exitFile": None,
+                           "log": None, "done": None, "exit": None}]
+            with open(S.STATE, "w") as f:
+                json.dump(st, f)
+            S.save(S.load())
+            day = time.strftime("%Y-%m-%d")
+            written = [S.STATE, S.BACKUP, os.path.join(S.BACKUP_DIR, "skills-%s.json" % day),
+                       os.path.join(S._offsite_dir(), "skills-%s.json" % day)]
+            for path in written:
+                if os.path.exists(path):
+                    with open(path) as f:
+                        self.assertNotIn("sk-SECRET", f.read(), path)
+            self.assertTrue(os.path.exists(written[-1]), "offsite copy was not written")
+            jobs = S.load()["jobs"]
+            self.assertEqual([j["cmd"] for j in jobs], ["deploy ...", "make ..."])
+            self.assertTrue(all(j["labelV"] == S.JOB_LABEL_VERSION for j in jobs))
+        finally:
+            S.OFFSITE = old_off
+
+    def test_marked_labels_are_left_alone_and_scrub_is_idempotent(self):
+        jobs = [{"cmd": "make ...", "labelV": S.JOB_LABEL_VERSION}]
+        self.assertFalse(S._scrub_jobs(jobs))
+        self.assertEqual(jobs[0]["cmd"], "make ...")
+        unmarked = [{"cmd": "make ..."}, {"cmd": None}]
+        self.assertTrue(S._scrub_jobs(unmarked))
+        self.assertEqual([j["cmd"] for j in unmarked], ["make ...", "job"])
+        self.assertFalse(S._scrub_jobs(unmarked))
+
+    def test_new_jobs_carry_the_label_marker(self):
+        self.assertIn(S.cmd_run(["/usr/bin/true"]), (None, 0))
+        self.assertEqual(S.load()["jobs"][-1]["labelV"], S.JOB_LABEL_VERSION)
+
 
 class DailySysop(unittest.TestCase):
     """1.0.0-1.0.4: sysop_today raised KeyError on any save, so the daemon's daily block
