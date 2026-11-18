@@ -223,6 +223,36 @@ class HistoryPrivacy(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(d)), ["out.json", "out.json.tmp", "victim.txt"])  # no leftovers
 
 
+class DailySysop(unittest.TestCase):
+    """1.0.0-1.0.4: sysop_today raised KeyError on any save, so the daemon's daily block
+    (Sysop, streak, job checks) aborted every active minute."""
+
+    def setUp(self):
+        fresh()
+
+    def test_fresh_save_gets_a_challenge(self):
+        d = S.load()
+        w = S.sysop_today(d)
+        self.assertIn(w["id"], S.SYSOP_BY_ID)
+        self.assertIn(S.cmd_sysop([]), (None, 0))         # the CLI exits 0 on None
+
+    def test_locked_challenges_stay_out_until_unlocked(self):
+        d = S.load()
+        for _ in range(3):
+            d.pop("sysop", None)
+            cid = S.sysop_today(d)["id"]
+            req = C.SYSOP_REQS.get(cid)
+            self.assertTrue(not req or S.level_for_xp(d["xp"][req[0]]) >= req[1], cid)
+
+    def test_daily_block_reaches_the_streak(self):
+        S.daily_wom()
+        S.daily_streak()
+        d = S.load()
+        self.assertEqual(d["sysop"]["day"], S.today())
+        self.assertEqual(d["streak"]["day"], S.today())
+        self.assertGreaterEqual(d["streak"]["count"], 1)
+
+
 class Mechanics(unittest.TestCase):
     def setUp(self):
         fresh()

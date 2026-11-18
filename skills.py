@@ -1074,9 +1074,12 @@ def sysop_today(data):
     w = data.get("sysop")
     if w and w.get("day") == today() and w.get("id") in SYSOP_BY_ID:
         return w
-    pool = [c for c in SYSOP_CHALLENGES if (not c[5] or shutil.which(c[5]))
-            and level_for_xp(data["xp"][SYSOP_REQS[c[0]][0]]) >= SYSOP_REQS[c[0]][1] if c[0] in SYSOP_REQS] + \
-           [c for c in SYSOP_CHALLENGES if c[0] not in SYSOP_REQS and (not c[5] or shutil.which(c[5]))]
+    def unlocked(c):
+        req = SYSOP_REQS.get(c[0])
+        return not req or level_for_xp(data["xp"].get(req[0], 0)) >= req[1]
+    pool = [c for c in SYSOP_CHALLENGES if (not c[5] or shutil.which(c[5])) and unlocked(c)]
+    if not pool:                                  # nothing installed qualifies: never crash on an empty pool
+        return None
     day = datetime.date.today().toordinal()
     cid = pool[(day * 7) % len(pool)][0]          # deterministic, cycles through the pool
     cond = SYSOP_BY_ID[cid][3]
@@ -2358,6 +2361,8 @@ def daily_wom():
             return
         w = sysop_today(data)
         save(data)
+    if not w:
+        return
     _, task, hint, _, reward, _ = SYSOP_BY_ID[w["id"]]
     notify("The Sysop", "Today's challenge: %s.\nTry: %s  (%s XP)"
            % (task, hint, ", ".join("%d %s" % (v, SKILL_BY_KEY[k][1]) for k, v in reward.items())))
@@ -2382,6 +2387,9 @@ def cmd_sysop(argv):
         data = load()
         w = sysop_today(data)
         save(data)
+    if not w:
+        print("The Sysop has no challenge today: none of its commands are installed.")
+        return 0
     _, task, hint, _, reward, _ = SYSOP_BY_ID[w["id"]]
     print("The Sysop's challenge for today%s:\n  %s\n  Try: %s\n  Reward: %s" % (
         " (done!)" if w.get("done") else "", task, hint,
@@ -2691,6 +2699,9 @@ def cmd_sysop_explain():
         data = load()
         w = sysop_today(data)
         save(data)
+    if not w:
+        print("The Sysop has no challenge today.")
+        return 0
     cid, task, hint, cond, reward, req = SYSOP_BY_ID[w["id"]]
     cmd = (req or hint.split()[0]).strip()
     ref = _reference(hint) if shutil.which(cmd) else ""
