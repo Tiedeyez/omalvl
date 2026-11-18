@@ -24,9 +24,8 @@ Two kinds of XP:
               * the same reason twice in DUP_DAYS is voided, and a reason must say something;
               * one award per skill per SAME_SKILL_GAP.
 
-Admin grants (`omalvl admin grant`) are the owner's override: they skip every check above, are
-recorded with their reason and tallied as "admin", and the panel shows the total, so the account
-stays verified and nothing is hidden.
+Historical local owner grants skip the checks above, are recorded with their reason and tallied as
+"admin", and the panel shows the total. The public release does not provide an admin grant command.
 
 A voided award grants nothing; it is logged with its reason, counted on the account and
 shown in the panel. Nothing is deleted or hidden.

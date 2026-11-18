@@ -37,7 +37,6 @@ Commands:
   collect [slot] | jobs     collect finished jobs for Workload XP / list the four slots
   streak                    your daily streak (the first active minute of each day continues it)
   add <skill> <xp>          grant XP by hand (fair play applies)
-  admin grant <skill> <xp|tier> <why>  the owner's override: no fair-play checks, logged and shown openly
   agent <skill> <tier> <why>  an AI agent awards work XP, sized by difficulty:
                             trivial 100, easy 300, medium 1k, hard 3k, expert 10k, master 30k (or a number)
   task <name> [xp]          a named daily task (commit, write, tidy, ...)
@@ -1293,33 +1292,6 @@ def cmd_add(argv, agent=False):
             save(data)
     announce(res)
     print("ok %s +%d%s" % (key, xp, " (%s)" % tier if tier else ""))
-
-
-def cmd_admin(argv):
-    """omalvl admin grant <skill> <xp|tier> <reason>   the owner's override: XP with no fair-play checks"""
-    if len(argv) < 4 or argv[0] != "grant":
-        print("usage: omalvl admin grant <skill> <xp|tier> <reason>\n"
-              "  Grants XP with no fair-play budget. Every grant is logged with its reason and shown\n"
-              "  on the fair-play card (omalvl fair), and the account stays verified.", file=sys.stderr)
-        return 2
-    key = skill_key(argv[1])
-    if not key:
-        print("unknown skill: %s (%s)" % (argv[1], ", ".join(SKILL_KEYS)), file=sys.stderr)
-        return 2
-    tier = argv[2].lower()
-    try:
-        xp = AGENT_TIERS[tier] if tier in AGENT_TIERS else int(float(tier))
-    except ValueError:
-        print("not a tier or a number: %s" % argv[2], file=sys.stderr)
-        return 2
-    reason = " ".join(argv[3:]).strip()
-    if xp <= 0 or len(reason) < 4:
-        print("xp must be positive and the reason must say what it is for", file=sys.stderr)
-        return 2
-    res = grant({key: xp}, why="admin: " + reason, source="admin", token_drop=True)
-    announce(res)
-    print("ok admin %s +%s" % (key, format(xp, ",")))
-    return 0
 
 
 def cmd_task(argv):
@@ -2930,7 +2902,7 @@ def main():
     cmd, argv = (sys.argv[1], sys.argv[2:]) if len(sys.argv) > 1 else ("list", [])
     handlers = {
         "list": cmd_list, "stats": cmd_list, "add": cmd_add,
-        "agent": lambda a: cmd_add(a, agent=True), "admin": cmd_admin, "task": cmd_task, "get": cmd_get,
+        "agent": lambda a: cmd_add(a, agent=True), "task": cmd_task, "get": cmd_get,
         "total": lambda a: print(snapshot()["total"]), "state": lambda a: print(json.dumps(snapshot())),
         "panel-state": cmd_panel_state, "rice": cmd_rice,
         "quests": cmd_quests, "quest": cmd_quest, "contract": cmd_contract, "signal": cmd_signal,

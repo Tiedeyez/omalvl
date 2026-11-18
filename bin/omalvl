@@ -1,4 +1,8 @@
 #!/bin/sh
 # OmaLvL CLI. Symlink this into your PATH (it finds the engine next to itself).
 here=$(dirname "$(readlink -f "$0")")
+if [ "$1" = admin ] && [ -f "$here/../admin.local.py" ]; then
+  shift
+  exec /usr/bin/python3 -I "$here/../admin.local.py" "$@"
+fi
 exec /usr/bin/python3 -I "$here/../skills.py" "$@"

@@ -1,6 +1,7 @@
 # Private working files and local-only migration support
 /HANDOFF.md
 /migrate.py
+/admin.local.py
 /tools/rename_ip.py
 /tools/rename_ip2.py
 **/HANDOFF.md

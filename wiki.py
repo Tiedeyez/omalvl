@@ -1101,9 +1101,8 @@ overnight don't count towards this.</li>
 <b>unverified</b>.</li></ul>
 <p>So "max all my stats" to an agent is void, while a real build, a real commit or a real fix is paid. Check with
 <code>omalvl fair</code>.</p>
-<h2>Admin grants</h2><p>It's your game. <code>omalvl admin grant &lt;skill&gt; &lt;xp|tier&gt; &lt;reason&gt;</code> grants XP with
-no fair-play checks. Each grant is recorded with its reason and the total is shown on the fair-play card, so the account
-stays verified and nothing is hidden.</p>""" % (
+<h2>Local history</h2><p>The public OmaLvL release has no admin grant command. Existing owner grants from the maintainer's
+local-only override remain recorded with their reason and shown on that local fair-play card.</p>""" % (
         "{:,}".format(A.BASE), A.PER_ACTIVE_MIN, "{:,}".format(A.MAX_SINGLE), A.BURST_SKILLS, A.BURST_WINDOW // 60, A.ACTIVE_DAY_MAX // 60)
     write("fair-play.html", "Fair play", body, [("Main page", "index.html"), ("Guides", "mechanics.html")], "fair play cheat bot void")
 
