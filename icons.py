@@ -1,4 +1,4 @@
-"""OmaScape's pixel icons: original 12x12 bitmaps in the blocky Omarchy-logo style.
+"""OmaLvL's pixel icons: original 12x12 bitmaps in the blocky Omarchy-logo style.
 
 Each icon is 12 rows of 12 characters. The characters are colour slots, filled from the
 active Omarchy theme at draw time, so every icon recolours with the theme:
@@ -7,7 +7,7 @@ active Omarchy theme at draw time, so every icon recolours with the theme:
   'a'  the skill's tint    'b'  theme accent
   '.'  shade (foreground at low alpha)
 
-`omascape icons --json` prints them for the panel; the wiki renders them as SVG.
+`omalvl icons --json` prints them for the panel; the wiki renders them as SVG.
 """
 
 ICONS = {

@@ -1,4 +1,4 @@
-"""Fair play: OmaScape never caps how fast a person levels by using the machine, but XP that
+"""Fair play: OmaLvL never caps how fast a person levels by using the machine, but XP that
 no real use backs up is voided. Everything here is local and explained in the wiki's
 Fair play page and DISCLOSURE.md.
 
@@ -10,8 +10,8 @@ Two kinds of XP:
               * a person sleeps. If the machine reports activity for more than ACTIVE_DAY_MAX
                 of the last 24 hours, measured XP is voided until the pattern breaks.
 
-  unmeasured  awards from agents (`omascape agent`), manual adds (`omascape add`) and claimed
-              tasks (`omascape task`). Each one must be backed by real recent use:
+  unmeasured  awards from agents (`omalvl agent`), manual adds (`omalvl add`) and claimed
+              tasks (`omalvl task`). Each one must be backed by real recent use:
               * the XP awarded in any 24 hours is at most BASE + PER_ACTIVE_MIN x active minutes
                 in those hours (about 6,000 XP per active hour: a full day's real project
                 easily fits; "max all my stats" does not);

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""OmaScape: level up by using your Omarchy machine.
+"""OmaLvL: level up by using your Omarchy machine.
 
-17 skills in six areas (Terminal, Desktop, Code, System, Web, AI), levels 1-100 on OmaScape's own
+17 skills in six areas (Terminal, Desktop, Code, System, Web, AI), levels 1-100 on OmaLvL's own
 curve, a Rice rating built from the six areas, quests that teach Omarchy / Linux / AI by doing them,
 daily contracts, signals, theme seasons and stamps, Update Day, dotfile relics, the keybind tree,
 panel skins and a pixel wallpaper of your stats. The daemon watches cheap signals (/proc, /sys,
 Hyprland's event socket, shell history, git, pacman) and pays the continuous skills only while
 you are actually at the computer. Content lives in content.py.
 
-State: ~/.local/state/omascape/state.json  (weekly reports: weekly/)   Config: ~/.config/omascape/config.json
+State: ~/.local/state/omalvl/state.json  (weekly reports: weekly/)   Config: ~/.config/omalvl/config.json
 
 Commands:
   list | stats              every skill by area: level, xp, xp/hr  (the default)
@@ -31,7 +31,7 @@ Commands:
   sysop | challenge         the Sysop's daily challenge;  sysop explain  asks your local AI about it
   overclock                 is an overclock on (double XP on one skill)?
   collection | companions   companions, mastery marks and rare finds
-  wiki [--no-open]          build the offline OmaScape wiki from the game data and open it
+  wiki [--no-open]          build the offline OmaLvL wiki from the game data and open it
   guide <skill> [--json]    the skill guide: XP, pace, how to train it, what each level unlocks
   run <command...>          queue a long job in a job slot (or: run --pid N)
   collect [slot] | jobs     collect finished jobs for Workload XP / list the four slots
@@ -73,8 +73,8 @@ from content import (QUESTS, CONTRACT_TASKS, CONTRACT_PER_DAY, SIGNAL_STEPS, SIG
 
 STATE_HOME = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
 CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-STATE = os.path.join(STATE_HOME, "omascape", "state.json")
-CONFIG = os.path.join(CONFIG_HOME, "omascape", "config.json")
+STATE = os.path.join(STATE_HOME, "omalvl", "state.json")
+CONFIG = os.path.join(CONFIG_HOME, "omalvl", "config.json")
 # Where commits are counted: every git repo directly inside these folders (config "repos").
 DEFAULT_REPO_GLOBS = ["~/Work/*", "~/Projects/*", "~/projects/*", "~/src/*", "~/code/*", "~/dev/*", "~/git/*"]
 
@@ -92,7 +92,7 @@ _TOOLS = {}
 
 
 def config():
-    """~/.config/omascape/config.json, read with a size cap; every key is optional."""
+    """~/.config/omalvl/config.json, read with a size cap; every key is optional."""
     try:
         with open(CONFIG, "rb") as f:
             raw = f.read(65537)
@@ -218,7 +218,7 @@ SYSOP_BY_ID = {w[0]: w for w in SYSOP_CHALLENGES}
 
 
 # --------------------------------------------------------------- XP curve
-# OmaScape's own curve: XP to reach level L is 100*(L-1) + 9,990,100 * ((L-1)/99) ** 3.5, so level 2 is
+# OmaLvL's own curve: XP to reach level L is 100*(L-1) + 9,990,100 * ((L-1)/99) ** 3.5, so level 2 is
 # 101 XP, level 10 about 3,200, level 50 about 851,000 and level 100 exactly 10,000,000. Early levels
 # come fast; the last fifth of the climb is half the XP. XP keeps counting after 100.
 MAX_LEVEL = 100
@@ -275,7 +275,7 @@ STATE_KEYS = {  # key: default factory
     "surge": lambda: None, "companions": dict, "collection": dict, "sysop": lambda: None,
     # v8: job slots, daily streak, mastery marks (key "badges"), total-level milestones
     "jobs": list, "streak": lambda: {"day": "", "count": 0, "best": 0}, "badges": dict,
-    # v10 (OmaScape): theme stamps, relics, keybind tree ranks, Update Day, chosen skin
+    # v10 (OmaLvL): theme stamps, relics, keybind tree ranks, Update Day, chosen skin
     "stamps": dict, "relics": dict, "tree": dict, "updateDay": lambda: None, "skin": lambda: "plain",
     # fair play (anticheat.py): activity per hour, unmeasured awards, XP tallied by source
     "fair": lambda: anticheat.blank(),
@@ -293,8 +293,8 @@ BACKUP = STATE + ".bak"
 BACKUP_DIR = os.path.join(os.path.dirname(STATE), "backups")
 BACKUP_DAYS = 14
 # Off-machine copy: a folder synced to another machine (Syncthing, Dropbox, a mounted
-# drive...): config "offsite", or OMASCAPE_OFFSITE. Off by default.
-OFFSITE = os.path.expanduser(os.environ.get("OMASCAPE_OFFSITE", str(config().get("offsite") or "")))
+# drive...): config "offsite", or OMALVL_OFFSITE. Off by default.
+OFFSITE = os.path.expanduser(os.environ.get("OMALVL_OFFSITE", str(config().get("offsite") or "")))
 OFFSITE_DAYS = 60
 DROP_GUARD = 0.9   # a save that loses >10% of total xp is refused unless allow_drop
 
@@ -335,7 +335,7 @@ def _recover():
             data = _read_state(path)
         except (OSError, ValueError):
             continue
-        sys.stderr.write("omascape: state restored from %s\n" % path)
+        sys.stderr.write("omalvl: state restored from %s\n" % path)
         return data
     return None
 
@@ -381,7 +381,7 @@ def save(data, allow_drop=False):
         if on_disk and _total_xp(payload) < on_disk * DROP_GUARD:
             # Something is about to wipe progress (a bad load, a bug): keep the file.
             _atomic_write(STATE + ".rejected", text)
-            sys.stderr.write("omascape: refused a save that drops total xp %d -> %d "
+            sys.stderr.write("omalvl: refused a save that drops total xp %d -> %d "
                              "(kept the old file; new data in %s.rejected)\n"
                              % (on_disk, _total_xp(payload), STATE))
             return
@@ -573,7 +573,7 @@ def _contract_progress(data, events, res):
             bonus = " A %s signal came with it." % tier
         res.notes.append(("Contract done",
                           "%d contracts in a row (+%d contract points, +%s %s XP). "
-                          "The Dispatcher has more: omascape contract new.%s"
+                          "The Dispatcher has more: omalvl contract new.%s"
                           % (sl["streak"], pts, format(task["n"] * unit * R["contract_task_mult"], ","),
                              SKILL_BY_KEY[pays][1], bonus)))
 
@@ -629,7 +629,7 @@ def _diary_progress(data, res):
                                   "t": int(time.time())})
             res.notes.append(("Journal: %s tier" % title,
                               "Every %s entry is done. Here is an XP token worth %s XP "
-                              "(omascape token <skill>)." % (title, format(lamp_xp, ","))))
+                              "(omalvl token <skill>)." % (title, format(lamp_xp, ","))))
 
 
 def reqs_met(data, reqs):
@@ -713,7 +713,7 @@ def rice_info(data):
 
 
 def cmd_rice(argv):
-    """omascape rice   Rice rating, rank, the six areas and what raises it next"""
+    """omalvl rice   Rice rating, rank, the six areas and what raises it next"""
     r = rice_info(load())
     if "--json" in argv:
         print(json.dumps(r))
@@ -739,7 +739,7 @@ def _marks_and_milestones(data, res, total_before, rice_before=None):
         if pid not in data["companions"] and level_for_xp(data["xp"][skill]) >= lvl:
             data["companions"][pid] = int(time.time())
             res.notes.append(("A companion hatched",
-                              "%s hatched at %s level %d and joins you (omascape collection)."
+                              "%s hatched at %s level %d and joins you (omalvl collection)."
                               % (name, SKILL_BY_KEY[skill][1], lvl)))
     if all(q[0] in data["quests"] for q in QUESTS) and "questmaster" not in data["badges"]:
         data["badges"]["questmaster"] = int(time.time())
@@ -754,7 +754,7 @@ def _marks_and_milestones(data, res, total_before, rice_before=None):
             res.notes.append(("Rice rank: %s" % rice_rank(r)[0], "Your Rice rating is now %d." % r))
         for sid, sname, need in SKINS:
             if rice_before < need <= r:
-                res.notes.append(("Skin unlocked: %s" % sname, "Wear it with: omascape skin %s" % sid))
+                res.notes.append(("Skin unlocked: %s" % sname, "Wear it with: omalvl skin %s" % sid))
     after = total_level(data)
     crossed = [m for m in TOTAL_MILESTONES if total_before < m <= after]
     if crossed:
@@ -821,7 +821,7 @@ def tree_info(data):
 
 
 def cmd_tree(argv):
-    """omascape tree   the keybind tree"""
+    """omalvl tree   the keybind tree"""
     t = tree_info(load())
     if "--json" in argv:
         print(json.dumps(t))
@@ -1119,7 +1119,7 @@ def snapshot(data=None):
                          "quests": [QUEST_BY_ID[q][1] for q in e.get("quests", []) if q in QUEST_BY_ID],
                          "gains": "  ".join("+%d %s" % (v, SKILL_BY_KEY[k][1]) for k, v in gains)})
     rice = rice_info(data)
-    return {"name": "OmaScape", "skills": out, "total": total, "maxTotal": MAX_TOTAL, "maxXp": MAX_XP,
+    return {"name": "OmaLvL", "skills": out, "total": total, "maxTotal": MAX_TOTAL, "maxXp": MAX_XP,
             "maxLevel": MAX_LEVEL, "rice": rice, "season": season_info(data), "treeInfo": tree_info(data),
             "relicInfo": [{"id": rid, "name": name, "found": rid in data["relics"]} for rid, name, _ in RELICS],
             "skins": skins_info(data), "skin": data.get("skin") or "plain", "palette": theme_palette(),
@@ -1172,7 +1172,7 @@ def _companion_log(data):
 # --------------------------------------------------------------- output
 def notify(title, msg):
     try:
-        subprocess.Popen([tool("notify-send"), "-a", "OmaScape", "-i", "input-gaming", title, msg])
+        subprocess.Popen([tool("notify-send"), "-a", "OmaLvL", "-i", "input-gaming", title, msg])
     except OSError:
         pass
 
@@ -1237,7 +1237,7 @@ def cmd_list(argv):
         print("SIGNAL (%s, step %d/%d) %s" % (snap["signalInfo"]["tier"], snap["signalInfo"]["step"],
                                             snap["signalInfo"]["steps"], snap["signalInfo"]["hint"]))
     if snap["tokenCount"]:
-        print("TOKENS %d unused  (omascape token <skill>)" % snap["tokenCount"])
+        print("TOKENS %d unused  (omalvl token <skill>)" % snap["tokenCount"])
 
 
 def cmd_add(argv, agent=False):
@@ -1259,16 +1259,16 @@ def cmd_add(argv, agent=False):
     if xp <= 0:
         print("xp must be positive", file=sys.stderr)
         return 2
-    why = "omascape add"
+    why = "omalvl add"
     if agent:
         reason = " ".join(argv[2:]).strip()
         if not reason:
-            print("agent awards need a reason: omascape agent <skill> <tier> <what was done>", file=sys.stderr)
+            print("agent awards need a reason: omalvl agent <skill> <tier> <what was done>", file=sys.stderr)
             return 2
         why = "agent%s: %s" % (" [%s]" % tier if tier else "", reason)
     res = grant({key: xp}, why=why, source="agent" if agent else "manual")
     if res.voided:
-        print("voided: %s. No XP was given; see `omascape fair`." % res.voided, file=sys.stderr)
+        print("voided: %s. No XP was given; see `omalvl fair`." % res.voided, file=sys.stderr)
         return 1
     if agent:
         with _Lock():
@@ -1313,14 +1313,14 @@ def cmd_quests(argv):
     for q in snap["questLog"]:
         mark = "done" if q["done"] else ("auto" if q["auto"] else "    ")
         print("[%s] %-20s %-30s %d renown  %s" % (mark, q["id"], q["name"], q["qp"], q["desc"]))
-    print("RENOWN %d / %d   (omascape quest <id> to see steps or complete one)" %
+    print("RENOWN %d / %d   (omalvl quest <id> to see steps or complete one)" %
           (snap["questPoints"], snap["maxQuestPoints"]))
 
 
 def cmd_quest(argv):
     qid = argv[0].lower() if argv else ""
     if qid not in QUEST_BY_ID:
-        print("unknown quest: %s  (see: omascape quests)" % qid, file=sys.stderr)
+        print("unknown quest: %s  (see: omalvl quests)" % qid, file=sys.stderr)
         return 2
     if len(argv) > 1 and argv[1] == "steps" or load()["quests"].get(qid):
         q = next(q for q in snapshot()["questLog"] if q["id"] == qid)
@@ -1346,7 +1346,7 @@ def cmd_contract(argv):
                 data["contract"]["task"] = None
                 print("Task cancelled. Your streak is reset.")
             elif argv[0] == "new" and data["contract"]["task"]:
-                print("You already have a contract. (omascape contract skip resets your streak)")
+                print("You already have a contract. (omalvl contract skip resets your streak)")
                 save(data)
                 return 0
             text = _new_contract_task(data)
@@ -1358,7 +1358,7 @@ def cmd_contract(argv):
     if sl["task"]:
         print("Task: %s  (%d/%d)" % (sl["task"]["text"], sl["task"]["done"], sl["task"]["n"]))
     else:
-        print("No task. %s" % ("Get one: omascape contract new" if sl["canNew"] else "Back tomorrow."))
+        print("No task. %s" % ("Get one: omalvl contract new" if sl["canNew"] else "Back tomorrow."))
     print("Streak %d · points %d · completed %d" % (sl["streak"], sl["points"], sl["completed"]))
 
 
@@ -1425,7 +1425,7 @@ def week_report(data=None):
     t0 = time.mktime(time.strptime(days[0], "%Y-%m-%d"))
     quests = [QUEST_BY_ID[q][1] for q, t in data["quests"].items() if t >= t0 and q in QUEST_BY_ID]
     active = [d for d in days if any(not k.startswith("_") for k in data["days"].get(d, {}))]
-    lines = ["OmaScape — week ending %s" % end.strftime("%a %d %b"),
+    lines = ["OmaLvL — week ending %s" % end.strftime("%a %d %b"),
              "Total XP: %d   ·   total level %d (+%d)   ·   active %d/7 days" %
              (sum(gains.values()), total_level(data), total_level(data) - start_total, len(active))]
     if gains:
@@ -1448,7 +1448,7 @@ def cmd_reset(argv):
     with _Lock():
         snap = snapshot_file("before-reset")
         if snap:
-            print("saved a copy first: %s  (undo: omascape restore %s)" % (snap, snap))
+            print("saved a copy first: %s  (undo: omalvl restore %s)" % (snap, snap))
         if argv:
             key = skill_key(argv[0])
             if not key:
@@ -1485,7 +1485,7 @@ def _fill(d):
 
 
 def cmd_backup(argv):
-    """omascape backup        save a copy now and list every backup"""
+    """omalvl backup        save a copy now and list every backup"""
     with _Lock():
         snap = snapshot_file("manual")
     print("saved %s" % snap)
@@ -1496,10 +1496,10 @@ def cmd_backup(argv):
 
 
 def cmd_restore(argv):
-    """omascape restore [file|latest]   put a backup back (the current state is saved first)"""
+    """omalvl restore [file|latest]   put a backup back (the current state is saved first)"""
     rows = _backup_list()
     if not argv:
-        print("usage: omascape restore <file> | latest   (omascape backup lists them)")
+        print("usage: omalvl restore <file> | latest   (omalvl backup lists them)")
         return 2
     if argv[0] == "latest":
         rows = [r for r in rows if r[1] != BACKUP]
@@ -1528,9 +1528,9 @@ def cmd_restore(argv):
 
 
 def cmd_import(argv):
-    """omascape import <state.json>   bring over a save from the prototype (local builds only)"""
+    """omalvl import <state.json>   bring over a save from the prototype (local builds only)"""
     if not argv:
-        print("usage: omascape import <path to an older save>", file=sys.stderr)
+        print("usage: omalvl import <path to an older save>", file=sys.stderr)
         return 2
     try:
         import migrate
@@ -1619,7 +1619,7 @@ def fair_info(data):
 
 
 def cmd_fair(argv):
-    """omascape fair   fair-play status: verified books, voided awards, today's award budget"""
+    """omalvl fair   fair-play status: verified books, voided awards, today's award budget"""
     fp = fair_info(load())
     if "--json" in argv:
         print(json.dumps(fp))
@@ -1635,7 +1635,7 @@ def cmd_fair(argv):
 
 
 def cmd_icons(argv):
-    """omascape icons --json   the pixel icons, for the panel"""
+    """omalvl icons --json   the pixel icons, for the panel"""
     import icons
     import pixelfont
     print(json.dumps({"size": icons.SIZE, "icons": icons.ICONS, "font": pixelfont.GLYPHS}))
@@ -2280,7 +2280,7 @@ def cmd_collection(argv):
 TRAINING_RATES = {  # skill -> [(activity, rate text)] for guides; values come from RATES
     "focus": [("Being at the computer", "%(focus_tick)d XP / 30 s"), ("A game focused", "+%(focus_game_min)d XP / min")],
     "workload": [("CPU time used while you're active", "%(workload_cpu_s)d XP / CPU-second"),
-                 ("Data written to disk", "%(workload_mb)d XP / MB"), ("Finished jobs (omascape collect)", "30 + 6 / min")],
+                 ("Data written to disk", "%(workload_mb)d XP / MB"), ("Finished jobs (omalvl collect)", "30 + 6 / min")],
     "browsing": [("Web pages visited (opt-in)", "%(browsing_visit)d XP each")],
     "shell": [("Omarchy keybind actions", "%(shell_kb)d XP each"), ("Ordinary shell commands", "%(shell_cmd)d XP each"),
               ("Keybind tree ranks", "100 / 300 / 1,000")],
@@ -2339,7 +2339,7 @@ def skill_guide(key, data=None):
 def cmd_guide(argv):
     key = skill_key(argv[0]) if argv else None
     if not key:
-        print("usage: omascape guide <skill> [--json]", file=sys.stderr)
+        print("usage: omalvl guide <skill> [--json]", file=sys.stderr)
         return 2
     g = skill_guide(key)
     if "--json" in argv:
@@ -2360,10 +2360,10 @@ def cmd_guide(argv):
 
 
 def cmd_wiki(argv):
-    """Rebuild the offline OmaScape wiki from this game's data and open it."""
+    """Rebuild the offline OmaLvL wiki from this game's data and open it."""
     import wiki
     path, n = wiki.build()
-    print("OmaScape wiki: %d pages -> %s" % (n, path))
+    print("OmaLvL wiki: %d pages -> %s" % (n, path))
     if "--no-open" not in argv:
         subprocess.Popen([tool("xdg-open"), path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -2387,10 +2387,10 @@ def _alive(pid):
 
 
 def cmd_run(argv):
-    """omascape run <command...>  |  omascape run --pid <pid> [label]"""
+    """omalvl run <command...>  |  omalvl run --pid <pid> [label]"""
     if not argv:
-        print("usage: omascape run <command...>   (a long job: a build, a download, local-llm ...)\n"
-              "       omascape run --pid <pid> [label]   (watch something already running)", file=sys.stderr)
+        print("usage: omalvl run <command...>   (a long job: a build, a download, local-llm ...)\n"
+              "       omalvl run --pid <pid> [label]   (watch something already running)", file=sys.stderr)
         return 2
     os.makedirs(JOB_DIR, exist_ok=True)
     with _Lock():
@@ -2398,7 +2398,7 @@ def cmd_run(argv):
         used = {p["slot"] for p in data["jobs"]}
         free = [s for s in JOB_SLOTS if s not in used]
         if not free:
-            print("All four job slots are in use. Collect one first (omascape collect).")
+            print("All four job slots are in use. Collect one first (omalvl collect).")
             return 1
         slot, stamp = free[0], int(time.time())
         base = os.path.join(JOB_DIR, "%s-%d" % (slot.lower(), stamp))
@@ -2413,7 +2413,7 @@ def cmd_run(argv):
             exitf = base + ".exit"
             with open(base + ".log", "w") as log:
                 # the user's own command runs in a shell (it is theirs to type); our paths are arguments
-                proc = subprocess.Popen([tool("sh"), "-c", '/usr/bin/sh -c "$1"; echo $? > "$2"', "omascape-job",
+                proc = subprocess.Popen([tool("sh"), "-c", '/usr/bin/sh -c "$1"; echo $? > "$2"', "omalvl-job",
                                          label, exitf],
                                         stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                         start_new_session=True, cwd=os.getcwd())
@@ -2422,7 +2422,7 @@ def cmd_run(argv):
                                 "exitFile": exitf, "log": base + ".log" if exitf else None,
                                 "done": None, "exit": None})
         save(data)
-    print("Queued %s in job slot %s. Collect it with omascape collect when it's done."
+    print("Queued %s in job slot %s. Collect it with omalvl collect when it's done."
           % ("'%s'" % label, slot))
 
 
@@ -2451,7 +2451,7 @@ def check_jobs():
         if p.get("exit"):
             notify("Job slot %s" % p["slot"], "'%s' failed with exit %d." % (p["cmd"][:60], p["exit"]))
         else:
-            notify("Job slot %s" % p["slot"], "'%s' finished. Collect it: omascape collect" % p["cmd"][:60])
+            notify("Job slot %s" % p["slot"], "'%s' finished. Collect it: omalvl collect" % p["cmd"][:60])
 
 
 def job_xp(p):
@@ -2484,7 +2484,7 @@ def cmd_collect(argv):
 def cmd_jobs(argv):
     data = load()
     if not data["jobs"]:
-        print("All four job slots are empty. Queue one: omascape run <long command>")
+        print("All four job slots are empty. Queue one: omalvl run <long command>")
     for p in data["jobs"]:
         state = ("failed (exit %d)" % p["exit"] if p.get("exit") else "ready to collect") if p["done"] \
             else "running for %s" % fmt_dur(time.time() - p["planted"])
@@ -2899,7 +2899,7 @@ def main():
         print("\n".join(__doc__.splitlines()[1:]))
         return 0
     if cmd not in handlers:
-        print("unknown command: %s  (try: omascape help)" % cmd, file=sys.stderr)
+        print("unknown command: %s  (try: omalvl help)" % cmd, file=sys.stderr)
         return 2
     return handlers[cmd](argv)
 

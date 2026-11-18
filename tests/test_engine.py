@@ -1,4 +1,4 @@
-"""OmaScape engine tests. Run: python3 -m unittest discover -s tests  (from the repo root)."""
+"""OmaLvL engine tests. Run: python3 -m unittest discover -s tests  (from the repo root)."""
 import json
 import os
 import re
@@ -8,11 +8,11 @@ import time
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TMP = tempfile.mkdtemp(prefix="omascape-test-")
+TMP = tempfile.mkdtemp(prefix="omalvl-test-")
 os.environ["XDG_STATE_HOME"] = os.path.join(TMP, "state")
 os.environ["XDG_CONFIG_HOME"] = os.path.join(TMP, "config")
 os.environ["XDG_DATA_HOME"] = os.path.join(TMP, "data")
-os.environ.pop("OMASCAPE_OFFSITE", None)
+os.environ.pop("OMALVL_OFFSITE", None)
 sys.path.insert(0, ROOT)
 
 import anticheat  # noqa: E402
@@ -27,7 +27,7 @@ import content as C  # noqa: E402
 import wallpaper  # noqa: E402
 
 SHIPPED = ["skills.py", "content.py", "glossary.py", "wiki.py", "icons.py", "pixelfont.py", "anticheat.py",
-           "wallpaper.py", "Panel.qml", "manifest.json", "README.md", "DISCLOSURE.md", "bin/omascape"]
+           "wallpaper.py", "Panel.qml", "manifest.json", "README.md", "DISCLOSURE.md", "bin/omalvl"]
 
 
 def fresh():
@@ -105,7 +105,7 @@ class Content(unittest.TestCase):
                             r"ardougne|morytania|runelite|runestar|chinchompa|tangleroot|rift guardian|wise old man|"
                             r"slayer|skillcape|treasure trail|clue scroll|drunken dwarf|sandwich lady|\bgenie\b|"
                             r"13,?034,?431|200,?000,?000|power level|combat level|quest points?\b|virtual level|"
-                            r"funny feeling|you've completed a quest|speak to the|tears of|shooting star|omaquest", re.I)
+                            r"funny feeling|you've completed a quest|speak to the|tears of|shooting star|omaquest|omascape", re.I)
         for name in SHIPPED:
             path = os.path.join(ROOT, name)
             if not os.path.exists(path):

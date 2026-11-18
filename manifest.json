@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "id": "tiedeyez.omascape",
-  "name": "OmaScape",
+  "id": "tiedeyez.omalvl",
+  "name": "OmaLvL",
   "version": "1.0.0",
   "author": "Tiedeyez",
   "description": "Level up by using your Omarchy machine: 17 skills in six areas, a Rice rating hexagon, theme seasons and stamps, dotfile relics, a keybind tree, quests that teach Omarchy and Linux, daily contracts and a pixel wallpaper of your stats. Pixel art in your theme's colours; activity data stays local.",
@@ -12,7 +12,7 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "OmaScape",
+    "displayName": "OmaLvL",
     "description": "Rice rating, six skill areas, quests and tasks",
     "category": "System",
     "allowMultiple": false,

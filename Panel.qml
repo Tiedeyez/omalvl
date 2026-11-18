@@ -7,13 +7,13 @@ import Quickshell.Io
 import qs.Ui
 import qs.Commons
 
-// OmaScape: 17 skills in six areas, levelled by using your Omarchy machine, a Rice rating,
+// OmaLvL: 17 skills in six areas, levelled by using your Omarchy machine, a Rice rating,
 // quests, contracts, signals, theme seasons, relics, the keybind tree and a journal. skills.py
-// is the engine and daemon; `omascape` is its CLI. Everything here is drawn on a pixel grid in the active theme's colours:
+// is the engine and daemon; `omalvl` is its CLI. Everything here is drawn on a pixel grid in the active theme's colours:
 // stepped corners and block shading, like the Omarchy wordmark.
 Panel {
   id: root
-  ipcTarget: "omascape"
+  ipcTarget: "omalvl"
 
   // ---- engine + state ---------------------------------------------------------
   readonly property string here: decodeURIComponent(Qt.resolvedUrl(".").toString().replace(/^file:\/\//, ""))
@@ -103,9 +103,9 @@ Panel {
   }
   Timer { id: daemonRespawn; interval: 5000; onTriggered: daemon.running = true }
 
-  //   omarchy-shell omascape.ui tab quests  |  ... guide shell  |  ... quest neovim
+  //   omarchy-shell omalvl.ui tab quests  |  ... guide shell  |  ... quest neovim
   IpcHandler {
-    target: "omascape.ui"
+    target: "omalvl.ui"
     function tab(name: string): void { root.tab = name; root.open() }
     function quest(id: string): void { root.tab = "quests"; root.expandedQuest = id; root.open() }
     function guide(skill: string): void { root.tab = "skills"; root.guideSkill = skill; root.open() }
@@ -478,7 +478,7 @@ Panel {
     hasVisualContent: true
     fixedWidth: vertical ? -1 : readout.implicitWidth + Style.space(12)
     fixedHeight: vertical ? readout.implicitHeight + Style.space(8) : -1
-    tooltipText: "OmaScape  ·  Rice " + root.rice.rating + " (" + root.rice.rank + ")"
+    tooltipText: "OmaLvL  ·  Rice " + root.rice.rating + " (" + root.rice.rank + ")"
       + "\nTotal level " + root.total + " / " + (root.sk.maxTotal || 1700) + "  ·  renown " + root.qp + " / " + root.maxQp
       + (root.contract.task ? "\nContract: " + root.contract.task.text + " (" + root.contract.task.done + "/" + root.contract.task.n + ")" : "")
       + (root.signal ? "\nSignal: " + root.signal.hint : "")
@@ -1301,7 +1301,7 @@ Panel {
             }
             Card {
               Heading { icon: "job_growing"; text: "Job slots"; iconTint: root.tint("green") }
-              Caption { width: parent.width; text: "Queue a long job: omascape run make -j4  ·  collect it when it's done for Workload XP." }
+              Caption { width: parent.width; text: "Queue a long job: omalvl run make -j4  ·  collect it when it's done for Workload XP." }
               Grid {
                 columns: 4
                 spacing: root.u * 3

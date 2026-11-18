@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Build the OmaScape Wiki: a static, offline wiki in the style of the OmaScape
-OmaScape Wiki, generated from this game's own data (skills.py + content.py), so it
+"""Build the OmaLvL Wiki: a static, offline wiki in the style of the OmaLvL
+OmaLvL Wiki, generated from this game's own data (skills.py + content.py), so it
 can never drift from the code. Quests, Contracts, signals, the diary, companions, random
 events, Sysop challenges, the XP table and every training rate (skills.RATES)
 come straight from the code.
 
-    python3 wiki.py [--open]       (or: omascape wiki)
+    python3 wiki.py [--open]       (or: omalvl wiki)
 
-Output: ~/.local/share/omascape/wiki/index.html (sprites and fonts copied
+Output: ~/.local/share/omalvl/wiki/index.html (sprites and fonts copied
 next to it, so it works with no network).
 """
 import datetime
@@ -27,7 +27,7 @@ import icons as I  # noqa: E402
 import pixelfont as PF  # noqa: E402
 import re  # noqa: E402
 
-OUT = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "omascape", "wiki")
+OUT = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "omalvl", "wiki")
 REPO = HERE   # the plugin folder is its own git repo
 e = html.escape
 
@@ -294,14 +294,14 @@ def write(url, title, body, crumbs=None, keywords="", self_term=None):
             '<a href="%s">%s</a>' % (u, e(t)) for t, u in crumbs)
     doc = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>%s - OmaScape Wiki</title><link rel="stylesheet" href="wiki.css"><link rel="icon" href="favicon.svg"></head>
+<title>%s - OmaLvL Wiki</title><link rel="stylesheet" href="wiki.css"><link rel="icon" href="favicon.svg"></head>
 <body><header><a class="logo" href="index.html">%s%s</a>
 <input id="q" type="search" placeholder="Search the wiki" aria-label="Search the wiki" autocomplete="off">
 <div id="results"></div></header>
 <div class="wrap"><nav>%s</nav><main>%s<h1>%s</h1>%s</main></div>
-<footer>Generated %s from the game's own data · rebuild with <code>omascape wiki</code> · in your Omarchy theme's colours · offline.</footer>
+<footer>Generated %s from the game's own data · rebuild with <code>omalvl wiki</code> · in your Omarchy theme's colours · offline.</footer>
 <script src="search.js"></script></body></html>""" % (
-        e(title), icon("total", 24), pixel_heading("OmaScape", 3), nav_html(), crumb, pixel_heading(title),
+        e(title), icon("total", 24), pixel_heading("OmaLvL", 3), nav_html(), crumb, pixel_heading(title),
         body, datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
     with open(os.path.join(OUT, url), "w") as f:
         f.write(doc)
@@ -599,7 +599,7 @@ def page_index(data, snap):
     facts = [
         "Level %d is halfway to level 100 in XP: the last levels are the long climb." % S.HALFWAY,
         "Every Omarchy theme favours one of the six areas. Switching theme changes your season.",
-        "Companions hatch at a set level. There are no drop tables in OmaScape.",
+        "Companions hatch at a set level. There are no drop tables in OmaLvL.",
         "The daemon only pays continuous skills while someone is actually at the computer.",
         "Committing your hypr or nvim config to git unearths a dotfile relic.",
         "Nothing in this game leaves your machine: it reads /proc, /sys, Hyprland, shell history, git and pacman.",
@@ -616,7 +616,7 @@ def page_index(data, snap):
         ("relic", "Dotfile relics", "relics.html", "Commit your config to unearth them."),
         ("ui/tasks.png", "Contracts", "contracts.html", "A daily task from the Dispatcher; streaks pay points."),
     ])
-    body = """<p class="lead"><b>OmaScape</b> turns using your Omarchy machine into a game: every keybind, command,
+    body = """<p class="lead"><b>OmaLvL</b> turns using your Omarchy machine into a game: every keybind, command,
 build, commit and push trains one of <a href="skills.html">%d skills</a> in six areas, levels 1 to 100 on
 <a href="experience.html">its own curve</a>. The areas make your <a href="rice.html">Rice rating</a>, and
 <a href="quests.html">quests</a>, <a href="contracts.html">contracts</a>, <a href="signals.html">signals</a> and the
@@ -638,7 +638,7 @@ def page_skills(snap):
     rows = "".join("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
         slink(k), e(S.AREA_BY_ID[S.AREA_OF[k]][1]), e(S.SKILL_BY_KEY[k][3]), "yes" if k in C.SURGE_SKILLS else "")
         for k in S.SKILL_KEYS)
-    body = """<p>There are %d skills in six areas. Each levels from 1 to 100 on OmaScape's
+    body = """<p>There are %d skills in six areas. Each levels from 1 to 100 on OmaLvL's
 <a href="experience.html">experience curve</a>, so the maximum total level is %d. An area's level is the mean of its
 skills, and the six area levels make your <a href="rice.html">Rice rating</a>.</p>
 <table class="wikitable"><tr><th>Skill</th><th>Area</th><th>Trained by</th><th>Overclocks</th></tr>%s</table>
@@ -706,7 +706,7 @@ def page_experience():
             style, lvl, "{:,}".format(xp), "{:,}".format(diff), 100.0 * xp / S.MAX_XP))
     pace = "".join("<tr><td>{:,}</td><td>{:,}</td><td>{:,}</td><td>{:,}</td></tr>".format(
         r, round(S.LEVEL_XP[25] / r), round(S.LEVEL_XP[50] / r), round(S.MAX_XP / r)) for r in (500, 1000, 2500, 5000, 10000))
-    body = """<p>OmaScape's curve is a power curve, not an exponential: the XP to reach level <i>L</i> is
+    body = """<p>OmaLvL's curve is a power curve, not an exponential: the XP to reach level <i>L</i> is
 <b>100·(L−1) + 9,990,100·((L−1)/99)<sup>3.5</sup></b>, rounded. Level 2 takes 101 XP, level 100 takes exactly
 <b>%s XP</b>, and level <b>%d</b> is the halfway point. Early levels come in minutes; the climb gets steadily longer
 instead of suddenly doubling.</p>
@@ -738,10 +738,10 @@ one point per area.</p>
 <p><b>You:</b> %d · %s%s. Weakest area: %s (train %s).</p>
 <h2>Areas</h2><table class="wikitable"><tr><th>Area</th><th>Skills</th><th>Level</th></tr>%s</table>
 <h2>Ranks</h2><table class="wikitable"><tr><th>Rating</th><th>Rank</th><th></th></tr>%s</table>
-<h2>Skins</h2><p>Panel frames unlocked by your rating. Wear one with <code>omascape skin &lt;name&gt;</code> or the Rice tab.</p>
+<h2>Skins</h2><p>Panel frames unlocked by your rating. Wear one with <code>omalvl skin &lt;name&gt;</code> or the Rice tab.</p>
 <table class="wikitable"><tr><th>Skin</th><th>Rating</th><th></th></tr>%s</table>
-<h2>Wallpaper</h2><p><code>omascape wallpaper</code> draws your hexagon, areas and levels as a pixel-art PNG in your theme's
-colours (in <code>~/Pictures/omascape/</code>). Set it yourself with <code>omarchy-theme-bg-set &lt;file&gt;</code>.</p>""" % (
+<h2>Wallpaper</h2><p><code>omalvl wallpaper</code> draws your hexagon, areas and levels as a pixel-art PNG in your theme's
+colours (in <code>~/Pictures/omalvl/</code>). Set it yourself with <code>omarchy-theme-bg-set &lt;file&gt;</code>.</p>""" % (
         r["rating"], e(r["rank"]), (" · next: %s at %d" % (e(r["next"]["rank"]), r["next"]["rating"])) if r["next"] else "",
         e(r["weakest"]["area"]), slink(r["weakest"]["skill"]), areas, ranks, skins)
     write("rice.html", "Rice rating", body, [("Main page", "index.html")], "rice rating rank hexagon area skins wallpaper")
@@ -810,7 +810,7 @@ def page_quests(data):
             ", ".join("%d %s" % (v, slink(k)) for k, v in C.QUEST_REQS.get(qid, {}).items()) or "—", reward_str(reward),
             '<span class="ok">Complete</span>' if done else '<span class="no">Not started</span>'))
     body = """<p>Quests teach Omarchy, Linux and AI by doing them. Most <b>auto-complete</b> when the daemon sees you do
-the steps; the rest you tick off yourself in the <a href="interface.html">Quests tab</a> or with <code>omascape quest &lt;id&gt;</code>.
+the steps; the rest you tick off yourself in the <a href="interface.html">Quests tab</a> or with <code>omalvl quest &lt;id&gt;</code>.
 There are %d quests worth %d renown.</p>
 <table class="wikitable"><tr><th>Quest</th><th>Difficulty</th><th>Renown</th><th>Completion</th><th>Requirements</th><th>Rewards</th><th>You</th></tr>%s</table>""" % (
         len(C.QUESTS), S.MAX_QP, "".join(rows))
@@ -834,7 +834,7 @@ def page_quest(q, data):
 <h2>Rewards</h2><div class="scroll">%d renown<br>%s</div>""" % (
         e(name), difficulty(qp).lower(), e(desc), walk,
         "<p>The quest completes itself when you: </p><ul>%s</ul>" % autos if auto else
-        "<p>Mark it complete in the Quests tab (two clicks) or run <code>omascape quest %s</code>.</p>" % qid,
+        "<p>Mark it complete in the Quests tab (two clicks) or run <code>omalvl quest %s</code>.</p>" % qid,
         qp, "<br>".join("%s %s XP" % ("{:,}".format(v), S.SKILL_BY_KEY[k][1]) for k, v in reward.items()))
     write("quest-%s.html" % qid, name, body, [("Main page", "index.html"), ("Quests", "quests.html")],
           "quest " + desc)
@@ -853,7 +853,7 @@ Skipping one resets your streak. A finished contract has a 25%% chance to come w
 <a href="signals.html">signal</a> if you don't already have one.</p>
 <p><b>You:</b> streak %d · %d points · %d done%s.</p>
 <h2>Contracts</h2><table class="wikitable"><tr><th>Contract</th><th>Pays</th><th>Total level</th><th>Amount</th><th>XP</th></tr>%s</table>
-<p>Commands: <code>omascape contract</code>, <code>omascape contract new</code>, <code>omascape contract skip</code>.</p>""" % (
+<p>Commands: <code>omalvl contract</code>, <code>omalvl contract new</code>, <code>omalvl contract skip</code>.</p>""" % (
         C.CONTRACT_PER_DAY, sl["streak"], sl["points"], sl["completed"],
         " · current: " + e(sl["task"]["text"]) if sl.get("task") else "", rows)
     write("contracts.html", "Contracts", body, [("Main page", "index.html")], "contract dispatcher points streak")
@@ -884,7 +884,7 @@ def page_diary(data):
             e(title), '<span class="ok">(complete)</span>' if done else "", "{:,}".format(token), rows))
     body = """<p>The Omarchy journal has four tiers, named for how deep into the machine you've gone: Boot, Login, Root and
 Kernel. Every entry is checked automatically; finishing a tier gives an XP token you can redeem on any skill
-(<code>omascape token &lt;skill&gt;</code>).</p>""" + "".join(parts)
+(<code>omalvl token &lt;skill&gt;</code>).</p>""" + "".join(parts)
     write("diary.html", "Journal", body, [("Main page", "index.html")], "journal boot login root kernel token")
 
 
@@ -917,7 +917,7 @@ def page_stars():
 earn from activity in one skill is <b>doubled</b>. Tokens, caches and agent awards are not doubled. After one ends, the next
 can't come for %d hours; then each active tick has a 1 in %d chance.</p>
 <p>Skills an overclock can land on: %s.</p>
-<p>While one is on, the bar shows a yellow pip and the skill gets a gold edge. Check with <code>omascape overclock</code>.</p>""" % (
+<p>While one is on, the bar shows a yellow pip and the skill gets a gold edge. Check with <code>omalvl overclock</code>.</p>""" % (
         C.SURGE_MINUTES, C.SURGE_COOLDOWN // 3600, round(1 / C.SURGE_CHANCE), ", ".join(slink(k) for k in C.SURGE_SKILLS))
     write("overclocks.html", "Overclocks", body, [("Main page", "index.html")], "overclock double xp")
 
@@ -930,7 +930,7 @@ def page_wom(snap):
     body = """%s<p>The Sysop sets one small "learn this" challenge a day. It is picked by date from the challenges whose
 command is installed, checked automatically, and pays XP once. These are written by hand, so every hint is correct.</p>
 <p><b>Today:</b> %s</p>
-<h2>Ask the local AI</h2><p>The Tasks tab's <b>Explain it (local AI)</b> button (or <code>omascape sysop explain</code>) has your
+<h2>Ask the local AI</h2><p>The Tasks tab's <b>Explain it (local AI)</b> button (or <code>omalvl sysop explain</code>) has your
 <a href="agents.html">local model</a> explain today's command. It is grounded in the command's own documentation (its
 <code>tldr</code> page, else <code>--help</code>, else the man page) and told not to guess. The panel labels the answer as the
 AI's, because small models can still be wrong. The challenge itself stays hand-written.</p>
@@ -954,12 +954,12 @@ def page_farming_runs(snap):
     body = """<p>Queue a long job (a build, a big download, a local-AI run) in one of four job slots. When it finishes, the
 daemon tells you, and you <b>collect</b> it for %s XP: <b>%d + %d per minute</b> it ran, up to %s. A job that fails
 (non-zero exit) pays %d%%.</p>
-<pre><code>omascape run make -j2                   # run and watch a command
-omascape run --pid 12345 "big download"  # watch something already running
-omascape jobs                           # see the four slots
-omascape collect                        # collect everything that's done</code></pre>
+<pre><code>omalvl run make -j2                   # run and watch a command
+omalvl run --pid 12345 "big download"  # watch something already running
+omalvl jobs                           # see the four slots
+omalvl collect                        # collect everything that's done</code></pre>
 <h2>Your slots</h2><table class="wikitable"><tr><th>Slot</th><th>State</th><th>Job</th></tr>%s</table>
-<p>Output of queued commands is kept in <code>~/.local/state/omascape/jobs/</code>.</p>""" % (
+<p>Output of queued commands is kept in <code>~/.local/state/omalvl/jobs/</code>.</p>""" % (
         slink("workload"), C.HARVEST_BASE, C.HARVEST_PER_MIN, "{:,}".format(C.HARVEST_MAX), int(C.DEAD_SHARE * 100), "".join(rows))
     write("job-runs.html", "Job slots", body, [("Main page", "index.html"), ("Skills", "skills.html")], "jobs run collect slot")
 
@@ -970,7 +970,7 @@ def page_streak(data):
     pool = [k for k in S.SKILL_KEYS if k not in S.PASSIVE]
     body = """<p>The first active minute of each day continues your streak (or starts a new one if you missed a day) and pays
 <b>%d XP × streak</b> (counting up to %d days) to <b>today's skill</b>, which rotates daily through the %d non-passive skills.</p>
-<ul>%s</ul><p><b>You:</b> %d day(s), best %d. Check with <code>omascape streak</code>.</p>""" % (
+<ul>%s</ul><p><b>You:</b> %d day(s), best %d. Check with <code>omalvl streak</code>.</p>""" % (
         C.STREAK_XP, C.STREAK_CAP_DAYS, len(pool), tokens, st.get("count", 0), st.get("best", 0))
     write("daily-streak.html", "Daily streak", body, [("Main page", "index.html")], "streak daily bonus")
 
@@ -991,7 +991,7 @@ quest earns the <b>Questmaster</b> mark, and every skill at 100 earns <b>Omarchi
 def page_lamps():
     diaries = "".join("<li>%s tier: %s XP</li>" % (e(t), "{:,}".format(l)) for _, t, _, l in C.DIARIES)
     body = """<p>A token gives XP to a skill of your choice: open the skill's guide in the panel and redeem it there, or run
-<code>omascape token &lt;skill&gt;</code>. <code>omascape token</code> lists the ones you have.</p>
+<code>omalvl token &lt;skill&gt;</code>. <code>omalvl token</code> lists the ones you have.</p>
 <ul><li><b>Courier token</b> (the courier <a href="random-events.html">random event</a>, some signal caches): 10 × the skill's level.</li>
 <li><b>XP tokens</b>: fixed XP, from the <a href="diary.html">journal</a><ul>%s</ul>
 from <a href="seasons.html">Update Day</a> (%s XP) and from long <a href="daily-streak.html">streaks</a>.</li></ul>""" % (
@@ -1003,7 +1003,7 @@ def page_collection(data):
     col = data["collection"]
     companions = " ".join(icon("companion/%s.png" % p[0], 36) if p[0] in data["companions"] else
                           '<span style="opacity:.25">%s</span>' % icon("companion/%s.png" % p[0], 36) for p in C.COMPANIONS)
-    body = """<p>Everything you've collected. Open it in the Collection tab or with <code>omascape collection</code>.</p>
+    body = """<p>Everything you've collected. Open it in the Collection tab or with <code>omalvl collection</code>.</p>
 <h2>Yours</h2><p>%s</p><ul>
 <li>Companions: %d / %d (<a href="companions.html">hatch levels</a>)</li>
 <li>Mastery marks: %d / %d · theme stamps: %d · dotfile relics: %d / %d</li>
@@ -1023,8 +1023,8 @@ def page_commands():
     for line in doc.splitlines():
         if line.startswith("  ") and len(line.strip()) > 0:
             cmd, _, desc = line.strip().partition("  ")
-            rows.append("<tr><td><code>omascape %s</code></td><td>%s</td></tr>" % (e(cmd.strip()), e(desc.strip())))
-    body = """<p><code>omascape</code> is the command-line side of the game.</p>
+            rows.append("<tr><td><code>omalvl %s</code></td><td>%s</td></tr>" % (e(cmd.strip()), e(desc.strip())))
+    body = """<p><code>omalvl</code> is the command-line side of the game.</p>
 <table class="wikitable"><tr><th>Command</th><th>What it does</th></tr>%s</table>""" % "".join(rows)
     write("commands.html", "Commands", body, [("Main page", "index.html"), ("Guides", "mechanics.html")], "cli commands")
 
@@ -1043,13 +1043,13 @@ catches the short-lived <code>omarchy-*</code> commands that keybinds run.</p>
 <h2 id="privacy">Privacy</h2><p>Everything stays on this machine. The daemon reads only local sources: <code>/proc</code>
 and <code>/sys</code> (CPU, disk, network counters, processes), Hyprland's socket, your shell history file, file times in
 a few config folders, git repos in your configured folders, the pacman log, the Chromium history count (opt-in) and
-<code>~/Downloads</code> size. It makes no network calls. State: <code>~/.local/state/omascape/state.json</code>.</p>""" % (
+<code>~/Downloads</code> size. It makes no network calls. State: <code>~/.local/state/omalvl/state.json</code>.</p>""" % (
         S.TICK, S.ACTIVE_IRQS, S.R["tick_cap"], int(C.SEASON_BONUS * 100), int(C.UPDATE_DAY_BONUS * 100), S.FLUSH)
     write("mechanics.html", "Mechanics", body, [("Main page", "index.html")], "tick activity privacy saving boosts")
 
 
 def page_interface():
-    body = """<p>The bar shows the OmaScape icon and your total level. An accent pip means a token, signal or finished job is
+    body = """<p>The bar shows the OmaLvL icon and your total level. An accent pip means a token, signal or finished job is
 waiting; a yellow one means an overclock is on. Hover for a summary; click to open the panel.</p>
 <table class="wikitable"><tr><th>Tab</th><th>Contents</th></tr>
 <tr><td>%s Skills</td><td>Six area cards, the Rice hexagon, hover detail and each skill's guide (click a skill)</td></tr>
@@ -1059,14 +1059,14 @@ waiting; a yellow one means an overclock is on. Hover for a summary; click to op
 <tr><td>%s Journal</td><td>Boot, Login, Root and Kernel tiers</td></tr>
 <tr><td>%s Collection</td><td>Companions, mastery marks and finds</td></tr>
 <tr><td>%s Log</td><td>Fair play, and what earned XP, and why</td></tr></table>
-<p>Scriptable: <code>omarchy-shell omascape.ui tab quests</code>, <code>omarchy-shell omascape.ui quest navigation</code>.</p>""" % tuple(
+<p>Scriptable: <code>omarchy-shell omalvl.ui tab quests</code>, <code>omarchy-shell omalvl.ui quest navigation</code>.</p>""" % tuple(
         icon(i, 20) for i in ("total", "rice", "quests", "tasks", "diary", "collection", "log"))
     write("interface.html", "The bar widget", body, [("Main page", "index.html"), ("Guides", "mechanics.html")], "panel tabs bar widget")
 
 
 def page_agents():
     body = """<h2>Agent awards</h2><p>AI agents you work with (Claude Code, OpenCode, Codex …) award XP for finished, verified work
-with <code>omascape agent &lt;skill&gt; &lt;tier&gt; "&lt;what was done&gt;"</code>. It is sized by how hard the work was; each
+with <code>omalvl agent &lt;skill&gt; &lt;tier&gt; "&lt;what was done&gt;"</code>. It is sized by how hard the work was; each
 tier is about 3× the one before. <a href="fair-play.html">Fair play</a> voids awards that recent activity doesn't back up.</p>
 <table class="wikitable"><tr><th>Tier</th><th>XP</th><th>Kind of work</th></tr>%s</table>
 <p>A plain number also works, for anything that doesn't fit a tier.</p>
@@ -1098,7 +1098,7 @@ any single award is capped at %s XP.</li>
 <li>Every XP change is tallied by source; if a skill's XP stops matching its tally (a hand edit), the account shows as
 <b>unverified</b>.</li></ul>
 <p>So "max all my stats" to an agent is void, while a real build, a real commit or a real fix is paid. Check with
-<code>omascape fair</code>.</p>""" % (
+<code>omalvl fair</code>.</p>""" % (
         "{:,}".format(A.BASE), A.PER_ACTIVE_MIN, "{:,}".format(A.MAX_SINGLE), A.BURST_SKILLS, A.BURST_WINDOW // 60, A.ACTIVE_DAY_MAX // 60)
     write("fair-play.html", "Fair play", body, [("Main page", "index.html"), ("Guides", "mechanics.html")], "fair play cheat bot void")
 
@@ -1119,7 +1119,7 @@ renown <b>%d</b> · contract points %d · companions %d/%d.</p>
 
 def page_updates():
     rows = "".join("<tr><td>%s</td><td><code>%s</code></td><td>%s</td></tr>" % (e(d), e(h), e(s)) for d, h, s in git_log())
-    body = """<p>Updates, from OmaScape's git history.</p>
+    body = """<p>Updates, from OmaLvL's git history.</p>
 <table class="wikitable"><tr><th>Date</th><th>Commit</th><th>Update</th></tr>%s</table>""" % (rows or "<tr><td colspan=3>No history found.</td></tr>")
     write("updates.html", "Updates", body, [("Main page", "index.html")], "updates changelog news")
 
@@ -1189,7 +1189,7 @@ def build():
 
 def main():
     path, n = build()
-    print("OmaScape Wiki: %d pages -> %s" % (n, path))
+    print("OmaLvL Wiki: %d pages -> %s" % (n, path))
     if "--open" in sys.argv:
         subprocess.Popen([S.tool("xdg-open"), path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 

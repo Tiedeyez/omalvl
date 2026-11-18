@@ -1,6 +1,6 @@
-"""OmaScape wallpaper: your stats drawn as pixel art in the active theme's colours.
+"""OmaLvL wallpaper: your stats drawn as pixel art in the active theme's colours.
 
-`omascape wallpaper` renders a PNG at the focused monitor's size (1920x1080 if Hyprland isn't
+`omalvl wallpaper` renders a PNG at the focused monitor's size (1920x1080 if Hyprland isn't
 there): the Rice rating as a six-axis hexagon, the six areas with every skill's icon and level,
 and your rank. Pure standard library (zlib + struct); nothing is set as your background unless
 you run omarchy-theme-bg-set on the file yourself.
@@ -123,7 +123,7 @@ def render(snap, out=None, size=None):
     areas = rice["areas"]
     skills = {s["key"]: s for s in snap["skills"]}
     # title and rank
-    cv.text(12, 12, "OMASCAPE", accent, 2)
+    cv.text(12, 12, "OMALVL", accent, 2)
     cv.text(12, 32, "RICE %d  %s" % (rice["rating"], rice["rank"]), fg, 1)
     cv.text(12, 42, "TOTAL %d / %d" % (snap["total"], snap["maxTotal"]), shade, 1)
     # the hexagon: rings at 25/50/75/100, the filled shape at each area's level
@@ -170,11 +170,11 @@ def render(snap, out=None, size=None):
             cv.rect(x + 16, yy + 10, 36, 2, faint)
             cv.rect(x + 16, yy + 10, filled, 2, st)
     if out is None:
-        folder = os.path.join(os.path.expanduser("~/Pictures"), "omascape")
+        folder = os.path.join(os.path.expanduser("~/Pictures"), "omalvl")
         os.makedirs(folder, exist_ok=True)
         theme = (snap.get("season") or {}).get("theme") or "theme"
         safe = "".join(c for c in theme.lower() if c.isalnum() or c in "-_") or "theme"
-        out = os.path.join(folder, "omascape-%s.png" % safe)
+        out = os.path.join(folder, "omalvl-%s.png" % safe)
     else:
         os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     cv.png(out, scale)

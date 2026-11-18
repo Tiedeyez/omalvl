@@ -1,4 +1,4 @@
-"""Glossary for the OmaScape Wiki: Linux, developer, hacker-culture and AI terms, each a
+"""Glossary for the OmaLvL Wiki: Linux, developer, hacker-culture and AI terms, each a
 teaching page. wiki.py turns every entry into term-<id>.html and auto-links the first
 mention of any term (or alias) on every page, like Wikipedia.
 
@@ -68,11 +68,11 @@ term("bash", "Bash", "shell",
 
 term("command-line", "Command line", "shell",
      "Working by typing commands; also called the CLI (command-line interface).",
-     ["A CLI program is driven by text: its name, then arguments and flags. `omascape`, `git`, `pacman` and "
+     ["A CLI program is driven by text: its name, then arguments and flags. `omalvl`, `git`, `pacman` and "
       "`local-llm` are all CLIs. A GUI (graphical user interface) is the clicky opposite.",
       "CLIs are easy to script, repeat, search in your history and run over SSH, which is why developers "
       "lean on them."],
-     [("omascape help", "this game's own CLI")],
+     [("omalvl help", "this game's own CLI")],
      ["shell", "argument", "flag", "terminal"], ["CLI", "command-line interface", "command line"])
 
 term("prompt-shell", "Shell prompt", "shell",
@@ -87,7 +87,7 @@ term("path-var", "PATH", "shell",
      ["When you type `rg`, the shell looks through each directory in `$PATH`, in order, for a file named "
       "`rg`. That is why tools you install in `~/.local/bin` work: it's on your PATH.",
       "If a program says 'command not found', it's either not installed or not in a PATH directory."],
-     [("echo $PATH | tr ':' '\\n'", "one PATH directory per line"), ("which omascape", "where the shell found omascape")],
+     [("echo $PATH | tr ':' '\\n'", "one PATH directory per line"), ("which omalvl", "where the shell found omalvl")],
      ["environment-variable", "shell", "absolute-path"], ["$PATH"])
 
 term("environment-variable", "Environment variable", "shell",
@@ -190,7 +190,7 @@ term("tab-completion", "Tab completion", "shell",
 term("shell-script", "Shell script", "shell",
      "A text file of shell commands that runs like a program.",
      ["Starts with a shebang (`#!/bin/bash`), then commands, one per line. Make it executable with "
-      "`chmod +x script.sh` and run it as `./script.sh`. `local-llm`, `omascape` and Omarchy's own `omarchy-*` "
+      "`chmod +x script.sh` and run it as `./script.sh`. `local-llm`, `omalvl` and Omarchy's own `omarchy-*` "
       "commands are scripts."],
      [("head -20 ~/.local/bin/local-llm", "the start of a real script")],
      ["shebang", "bash", "permissions", "exit-code"], ["shell scripts", "bash script", "script"],
@@ -229,7 +229,7 @@ term("regex", "Regular expression", "shell",
      "A pattern language for matching text, used by grep, rg, sed and most editors.",
      ["`^` is start of line, `$` end, `.` any character, `*` repeat, `[0-9]` a digit. `rg '^def '` finds "
       "lines starting with 'def '. Powerful, but quote them so the shell doesn't touch the symbols."],
-     [("rg -n '^def ' ~/.config/omarchy/plugins/omascape/skills.py | head", "every function definition")],
+     [("rg -n '^def ' ~/.config/omarchy/plugins/omalvl/skills.py | head", "every function definition")],
      ["grep", "ripgrep", "glob"], ["regular expression", "regular expressions", "regexp", "regexes"])
 
 term("glob", "Glob (wildcard)", "shell",
@@ -251,7 +251,7 @@ term("ripgrep", "ripgrep (rg)", "shell",
      "A very fast recursive search tool: `rg pattern`.",
      ["ripgrep searches the current directory tree, skips files listed in .gitignore, and uses all CPU "
       "cores in parallel. That's why it's the default search in Omarchy and in most AI coding agents."],
-     [("rg -l Contracts ~/.config/omarchy/plugins/omascape", "files that mention Contracts")],
+     [("rg -l Contracts ~/.config/omarchy/plugins/omalvl", "files that mention Contracts")],
      ["grep", "fd", "regex", "git"], ["rg"],
      "Trains {skill:searching}.")
 
@@ -340,7 +340,7 @@ term("symlink", "Symbolic link", "files",
      "A shortcut file that points to another path.",
      ["`ln -s target linkname` creates one. Programs follow it transparently. Keeping your dotfiles "
       "in one git repo and symlinking them into place makes that repo the single source of truth."],
-     [("ls -l ~/.config/omarchy/plugins/ | rg skills", "the omascape symlink")],
+     [("ls -l ~/.config/omarchy/plugins/ | rg skills", "the omalvl symlink")],
      ["dotfiles", "filesystem", "absolute-path"], ["symlinks", "symbolic link", "soft link"])
 
 term("archive", "Archive (tar)", "files",
@@ -702,7 +702,7 @@ term("git", "Git", "dev",
       "(`git add`), and commit (`git commit`). Branches let you try things without breaking the main line.",
       "Keeping your configs and projects in git means every change can be reviewed and undone; this "
       "game's own code is a git repo."],
-     [("git -C ~/.config/omarchy/plugins/omascape log --oneline -5", "the last five changes"), ("git status", "what changed (inside a repo)")],
+     [("git -C ~/.config/omarchy/plugins/omalvl log --oneline -5", "the last five changes"), ("git status", "what changed (inside a repo)")],
      ["repository", "commit", "diff", "branch", "remote"], ["version control", "VCS"],
      "Commits train {skill:commits} and {skill:editing}, and config commits unearth relics.")
 
@@ -717,7 +717,7 @@ term("commit", "Commit", "dev",
      "A saved snapshot of changes in git, with a message and an author.",
      ["Good commits are small and focused, with a message saying why. Each has a hash like `ca58da5` that "
       "names it forever."],
-     [("git -C ~/.config/omarchy/plugins/omascape show --stat HEAD", "the latest commit and its files")],
+     [("git -C ~/.config/omarchy/plugins/omalvl show --stat HEAD", "the latest commit and its files")],
      ["git", "diff", "repository"], ["commits", "git commit", "commit message"],
      "500 {skill:commits} XP each; {quest:ai_builder3}.")
 
@@ -725,14 +725,14 @@ term("diff", "Diff", "dev",
      "The line-by-line difference between two versions of files.",
      ["`git diff` shows unstaged changes; `--stat` summarises. Lines starting `+` were added, `-` removed. "
       "Reviewing a diff before committing catches mistakes."],
-     [("git -C ~/.config/omarchy/plugins/omascape diff --stat HEAD~1", "what the last commit changed")],
+     [("git -C ~/.config/omarchy/plugins/omalvl diff --stat HEAD~1", "what the last commit changed")],
      ["commit", "git", "code-review"], ["diffs", "git diff"],
      "A {page:sysop.html|Sysop} challenge.")
 
 term("branch", "Branch", "dev",
      "A separate line of commits in git, for working on something without touching the main line.",
      ["`git switch -c idea` creates one; `git switch main` goes back; `git merge idea` brings it in."],
-     [("git -C ~/.config/omarchy/plugins/omascape branch", "branches here")],
+     [("git -C ~/.config/omarchy/plugins/omalvl branch", "branches here")],
      ["git", "merge", "commit"], ["branches", "git branch", "main branch"])
 
 term("merge", "Merge", "dev",
@@ -777,7 +777,7 @@ term("open-source", "Open source", "dev",
 term("license", "Software license", "dev",
      "The legal terms for using and sharing code.",
      ["MIT and Apache-2.0 let you do almost anything if you keep the notice; GPL asks that changes you share "
-      "stay GPL; CC0 gives a work to the public domain. OmaScape itself is MIT: see its LICENSE file."],
+      "stay GPL; CC0 gives a work to the public domain. OmaLvL itself is MIT: see its LICENSE file."],
      [], ["open-source"], ["licence", "licenses", "MIT license", "Apache-2.0", "GPL", "CC0"])
 
 term("compiler", "Compiler", "dev",
@@ -820,7 +820,7 @@ term("node", "Node.js and npm", "dev",
 term("json", "JSON", "dev",
      "A simple text format for structured data: objects, lists, strings, numbers.",
      ["This game's whole save is one JSON file. APIs send JSON. `jq` is the classic tool for reading it."],
-     [("python3 -m json.tool ~/.local/state/omascape/state.json | head -20", "the start of your save")],
+     [("python3 -m json.tool ~/.local/state/omalvl/state.json | head -20", "the start of your save")],
      ["api", "config-file", "python"], ["jq"])
 
 term("lua", "Lua", "dev",
@@ -834,7 +834,7 @@ term("qml", "QML", "dev",
      "Qt's language for user interfaces; the Omarchy shell and this game's panel are written in it.",
      ["QML describes visual items (Rectangle, Text, Image) and binds their properties to data, with "
       "JavaScript for logic. Quickshell uses it to draw the bar."],
-     [("head -40 ~/.config/omarchy/plugins/omascape/Panel.qml", "this game's panel")],
+     [("head -40 ~/.config/omarchy/plugins/omalvl/Panel.qml", "this game's panel")],
      ["quickshell", "omarchy"], ["Qt Quick", "Qt"])
 
 term("bug", "Bug", "dev",
@@ -995,7 +995,7 @@ term("ai-agent", "AI agent", "ai",
      ["Claude Code, OpenCode and Codex are agents: they read your project, plan, run tools, look at the "
       "results and keep going. Always review what an agent changed."],
      [], ["llm", "local-model", "code-review", "prompt"], ["AI agents", "coding agent", "agents"],
-     "Agents' CPU time trains {skill:agents}; they award XP with `omascape agent`; {quest:ai_agents}.")
+     "Agents' CPU time trains {skill:agents}; they award XP with `omalvl agent`; {quest:ai_agents}.")
 
 term("llm", "Large language model (LLM)", "ai",
      "An AI trained on huge amounts of text to predict the next token; the brain inside chatbots and agents.",

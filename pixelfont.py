@@ -1,4 +1,4 @@
-"""OmaScape's pixel font: an original 5x7 block face for headings and big numbers,
+"""OmaLvL's pixel font: an original 5x7 block face for headings and big numbers,
 square-cornered like the Omarchy wordmark. Each glyph is 7 rows of 5 cells ('#' = on).
 Lower-case input is drawn in capitals. Body text uses the theme's own font."""
 

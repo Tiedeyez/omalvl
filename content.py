@@ -1,4 +1,4 @@
-"""Game content for OmaScape: quests (with helper steps), contracts, signal hunts,
+"""Game content for OmaLvL: quests (with helper steps), contracts, signal hunts,
 the Omarchy journal, random events, relics, the keybind tree, skins and rice ranks.
 
 Everything that "detects" something refers to an *event key*. The daemon
@@ -143,7 +143,7 @@ QUESTS = [
       ("Edit a gap or border in ~/.config/hypr, then hyprctl reload", ("sum", "cmd:hyprctl", 2))]),
     ("quickshell", "Quickshell", 3, "Read a bar plugin's QML and change something small",
      {"editing": 120, "packages": 120}, [],
-     [("Open ~/.config/omarchy/plugins/tiedeyez.omascape/Panel.qml (or any plugin's)", None),
+     [("Open ~/.config/omarchy/plugins/tiedeyez.omalvl/Panel.qml (or any plugin's)", None),
       ("Change one colour, omarchy restart shell, and see it", None)]),
     ("arch_wiki", "Arch Wiki Deep Dive", 3, "Fix a real problem using the Arch wiki, not an AI",
      {"workload": 150, "tiling": 150}, [],
@@ -414,7 +414,7 @@ SYSOP_CHALLENGES += [
      ("sum", "cmd2:journalctl --user", 1), {"focus": 350}, "journalctl"),
     ("resolve", "Look up a domain's address", "resolvectl query archlinux.org", ("sum", "cmd:resolvectl", 1),
      {"downloads": 350}, "resolvectl"),
-    ("jq", "Read one value out of JSON", "jq '.total' ~/.local/state/omascape/state.json",
+    ("jq", "Read one value out of JSON", "jq '.total' ~/.local/state/omalvl/state.json",
      ("sum", "cmd:jq", 1), {"editing": 350}, "jq"),
     ("git_stash", "Park unfinished work with git stash", "git stash list   (then: git stash, git stash pop)",
      ("sum", "cmd2:git stash", 1), {"commits": 350}, "git"),

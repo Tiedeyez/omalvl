@@ -1,4 +1,4 @@
 #!/bin/sh
-# OmaScape CLI. Symlink this into your PATH (it finds the engine next to itself).
+# OmaLvL CLI. Symlink this into your PATH (it finds the engine next to itself).
 here=$(dirname "$(readlink -f "$0")")
 exec /usr/bin/python3 -I "$here/../skills.py" "$@"
