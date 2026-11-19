@@ -6,7 +6,7 @@ Level up by using your Omarchy machine.
 
 OmaLvL is a bar widget for [Omarchy](https://omarchy.org). It watches what you actually do (commands, keybinds, commits, builds, theme changes, window moves) and turns it into XP across 17 skills in six areas: Terminal, Desktop, Code, System, Web and AI. Quests teach Omarchy, Linux and AI by having you do them. Everything is drawn as pixel art in your current theme's colours, and it all stays on your machine.
 
-**Sizzle reel:** [16:9](https://github.com/Tiedeyez/omalvl/releases/latest/download/omalvl-reel-16x9.mp4) · [9:16](https://github.com/Tiedeyez/omalvl/releases/latest/download/omalvl-reel-9x16.mp4) · [1:1](https://github.com/Tiedeyez/omalvl/releases/latest/download/omalvl-reel-1x1.mp4)
+**Sizzle reel:** [16:9](https://github.com/Tiedeyez/omalvl/releases/download/v1.0.2/omalvl-reel-16x9.mp4) · [9:16](https://github.com/Tiedeyez/omalvl/releases/download/v1.0.2/omalvl-reel-9x16.mp4) · [1:1](https://github.com/Tiedeyez/omalvl/releases/download/v1.0.2/omalvl-reel-1x1.mp4)
 
 ## What's in it
 
