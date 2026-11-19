@@ -334,6 +334,67 @@ SAFE_HISTORY_STATS = frozenset(
     | {"cmd2:" + pair for pair in SAFE_HISTORY_PAIRS}
 )
 _LEGACY_BACKUPS_SCRUBBED = False
+# Event keys the watchers may persist. Menu routes and panel ids come from command-line
+# arguments, so only Omarchy's own names are kept; anything else is counted as "<kind>:other".
+MENU_ROUTES = frozenset((
+    "root", "keybindings", "apps", "app", "applications", "learn", "appearance", "style", "trigger",
+    "setup", "settings", "install", "remove", "uninstall", "update", "restart", "refresh", "about",
+    "system", "power-menu", "theme", "themes", "background", "wallpaper", "unlock", "toggle", "toggles",
+    "emoji", "emojis", "reminder", "remind", "reminder-set", "capture", "screenshot", "screenrecord",
+    "screen-record", "screenrecording", "share", "hardware", "hw", "network", "dns", "wifi-qr",
+    "default", "defaults", "plugin", "plugins",
+))
+EVENT_NAMES = {
+    "menu": MENU_ROUTES,
+    "panel": frozenset("omarchy." + n for n in (
+        "agents", "background", "bar", "clipboard", "dev-gallery", "dock", "emojis", "image-picker",
+        "lock", "menu", "notifications", "osd", "panels", "polkit", "reminders", "services", "weather")),
+    "toggle": frozenset((
+        "animations", "bar", "crash-capture", "enabled", "fullscreen-desktop", "hybrid-gpu", "idle", "input-device",
+        "nightlight", "notification-silencing", "screensaver", "suspend", "theme-sync", "touchpad",
+        "touchscreen")),
+    "window": frozenset((
+        "close-all", "gaps-toggle", "minimize", "pop", "single-square-aspect-toggle",
+        "tiled-fullscreen-toggle", "transparency", "transparency-toggle", "width")),
+    "capture": frozenset((
+        "qr", "region", "screenrecording", "screenrecording-process", "screenrecording-with-webcam",
+        "screenshot", "text", "text-dictation", "text-extraction", "webcam-list", "webcam-resize")),
+    "layer": frozenset("omarchy-" + n for n in (
+        "clipboard", "dock-apps", "emojis", "image-selector", "keyboard-panel", "lock-preview", "menu",
+        "network-qr", "notifications", "osd", "polkit", "reminders")),
+}
+
+
+def safe_event(key):
+    """An event key as it may be saved: known names pass, other menu/panel/... names become
+    "<kind>:other", so no command-line argument is ever persisted."""
+    if not isinstance(key, str):
+        return None
+    inner = key[3:] if key.startswith("kb:") else key
+    kind, sep, name = inner.partition(":")
+    if not sep or kind not in EVENT_NAMES:
+        return key
+    if name not in EVENT_NAMES[kind]:
+        top = name.split(".", 1)[0] if kind == "menu" else ""
+        name = top if top in MENU_ROUTES else "other"   # appearance.theme -> appearance
+    return ("kb:" if key.startswith("kb:") else "") + kind + ":" + name
+
+
+def _scrub_event_stats(stats):
+    """Fold event counters with unknown names (older builds kept raw arguments) into "<kind>:other"."""
+    if not isinstance(stats, dict):
+        return False
+    changed = False
+    for key in list(stats):
+        safe = safe_event(key)
+        if safe != key:
+            v = stats.pop(key)
+            if safe and isinstance(v, (int, float)):
+                stats[safe] = round(stats.get(safe, 0) + v, 2)
+            changed = True
+    return changed
+
+
 
 
 JOB_LABEL_VERSION = 1   # jobs carrying "labelV" >= this were labelled by _job_label at creation
@@ -360,12 +421,13 @@ def _scrub_jobs(jobs):
 
 
 def _scrub_private(data):
-    """Everything persisted from shell input: history counters and job commands."""
+    """Everything persisted from shell input: history counters, watcher events and job commands."""
     if not isinstance(data, dict):
         return False
     a = _scrub_history_stats(data.get("stats"))
-    b = _scrub_jobs(data.get("jobs"))
-    return a or b
+    b = _scrub_event_stats(data.get("stats"))
+    c = _scrub_jobs(data.get("jobs"))
+    return a or b or c
 
 
 def _scrub_history_stats(stats):
@@ -2259,7 +2321,7 @@ def watch_hyprland(ev):
                     elif name == "openlayer" and arg.startswith("omarchy-") and \
                             not arg.endswith("-dismiss") and \
                             arg not in ("omarchy-bar", "omarchy-dock", "omarchy-background"):
-                        ev.add("layer:" + arg)
+                        ev.add(safe_event("layer:" + arg))
                     elif name in HYPR_EVENTS:
                         ev.add(HYPR_EVENTS[name])
         except OSError:
@@ -2274,7 +2336,7 @@ NOT_ACTIONS = {"capture:webcam-list", "capture:webcam-resize", "toggle:enabled"}
 def classify_command(argv):
     """An Omarchy keybind command line -> event key, or None."""
     key = _classify(argv)
-    return None if key in NOT_ACTIONS else key
+    return None if key in NOT_ACTIONS else safe_event(key)
 
 
 def _classify(argv):
@@ -2310,9 +2372,25 @@ def _classify(argv):
     return None
 
 
+def _proc_event(pid, me):
+    """The event key for one new pid, or None. Other users' processes are never read."""
+    if not pid.isdigit():
+        return None
+    try:
+        if os.stat("/proc/%s" % pid).st_uid != me:
+            return None
+        with open("/proc/%s/cmdline" % pid, "rb") as f:
+            argv = [a.decode("utf-8", "replace") for a in f.read().split(b"\0") if a]
+    except OSError:
+        return None
+    return classify_command(argv)
+
+
 def watch_processes(ev):
     """Catch Omarchy's short-lived keybind commands (they live ~0.15-0.4 s) by
-    checking /proc for new pids six times a second. Only command names are read."""
+    checking /proc for new pids six times a second. Only your own processes are read,
+    and only fixed Omarchy event names are kept (see safe_event)."""
+    me = os.getuid()
     seen = set(os.listdir("/proc"))
     while True:
         time.sleep(1 / 6.0)
@@ -2321,14 +2399,7 @@ def watch_processes(ev):
         except OSError:
             continue
         for pid in now - seen:
-            if not pid.isdigit():
-                continue
-            try:
-                with open("/proc/%s/cmdline" % pid, "rb") as f:
-                    argv = [a.decode("utf-8", "replace") for a in f.read().split(b"\0") if a]
-            except OSError:
-                continue
-            key = classify_command(argv)
+            key = _proc_event(pid, me)
             if key:
                 ev.add(key)
                 if key not in ("reminder", "update", "wallpaper"):
@@ -2709,9 +2780,27 @@ def daily_streak():
 LLM_URL = "http://127.0.0.1:8080"
 
 
+class _NoRedirect(urllib_request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None          # a 3xx from the local model is an error, never followed
+
+
+def _local_opener():
+    """Talks only to the loopback model: no proxy (an http_proxy without a 127.0.0.1 bypass
+    would otherwise receive the prompt) and no redirects."""
+    return urllib_request.build_opener(urllib_request.ProxyHandler({}), _NoRedirect())
+
+
+def _local_open(req, timeout):
+    url = req.full_url if isinstance(req, urllib_request.Request) else req
+    if not url.startswith(LLM_URL + "/"):
+        raise ValueError("local model calls must go to %s" % LLM_URL)
+    return _local_opener().open(req, timeout=timeout)
+
+
 def _llm_up():
     try:
-        urllib_request.urlopen(LLM_URL + "/health", timeout=2).read()
+        _local_open(LLM_URL + "/health", timeout=2).read()
         return True
     except Exception:
         return False
@@ -2773,7 +2862,7 @@ def cmd_sysop_explain():
                        "max_tokens": 220, "temperature": 0.3}).encode()
     try:
         req_ = urllib_request.Request(LLM_URL + "/v1/chat/completions", body, {"Content-Type": "application/json"})
-        text = json.load(urllib_request.urlopen(req_, timeout=240))["choices"][0]["message"]["content"].strip()
+        text = json.load(_local_open(req_, timeout=240))["choices"][0]["message"]["content"].strip()
     except Exception as e:
         text = ""
         print("The local model didn't answer: %r" % e)

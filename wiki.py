@@ -14,6 +14,7 @@ import datetime
 import html
 import json
 import os
+import stat
 import shutil
 import subprocess
 import sys
@@ -28,6 +29,28 @@ import pixelfont as PF  # noqa: E402
 import re  # noqa: E402
 
 OUT = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "omalvl", "wiki")
+
+
+def _private_write(path, text):
+    """Wiki pages carry your activity and machine details: owner-only (0600), never via a symlink.
+    O_CREAT keeps an existing file's old mode, so fchmod corrects pages from older builds."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        os.fchmod(f.fileno(), 0o600)
+        f.write(text)
+
+
+def _private_dirs():
+    """The wiki folder and its app-owned parent are owner-only (0700); older pages get 0600."""
+    os.makedirs(OUT, mode=0o700, exist_ok=True)
+    for d in (os.path.dirname(OUT), OUT):
+        if not os.path.islink(d):
+            os.chmod(d, 0o700)
+    for name in os.listdir(OUT):
+        path = os.path.join(OUT, name)
+        st = os.lstat(path)
+        if stat.S_ISREG(st.st_mode) and st.st_mode & 0o077:
+            os.chmod(path, 0o600)
 REPO = HERE   # the plugin folder is its own git repo
 e = html.escape
 
@@ -303,8 +326,7 @@ def write(url, title, body, crumbs=None, keywords="", self_term=None):
 <script src="search.js"></script></body></html>""" % (
         e(title), icon("total", 24), pixel_heading("OmaLvL", 3), nav_html(), crumb, pixel_heading(title),
         body, datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
-    with open(os.path.join(OUT, url), "w") as f:
-        f.write(doc)
+    _private_write(os.path.join(OUT, url), doc)
 
 
 # --------------------------------------------------------------- data views
@@ -1140,12 +1162,11 @@ def theme_vars():
 
 
 def copy_assets():
-    with open(os.path.join(OUT, "favicon.svg"), "w") as f:
-        f.write(I.svg("total", 4, "#e0e0e0", "#7aa2f7", "#e0af68"))
+    _private_write(os.path.join(OUT, "favicon.svg"), I.svg("total", 4, "#e0e0e0", "#7aa2f7", "#e0af68"))
 
 
 def build():
-    os.makedirs(OUT, exist_ok=True)
+    _private_dirs()
     copy_assets()
     data = S.load()
     snap = S.snapshot(data)
@@ -1185,10 +1206,8 @@ def build():
     page_learn(data)
     for t in G.T:
         page_term(t, data)
-    with open(os.path.join(OUT, "wiki.css"), "w") as f:
-        f.write(CSS.replace("__THEME__", theme_vars()))
-    with open(os.path.join(OUT, "search.js"), "w") as f:
-        f.write(JS.replace("__INDEX__", json.dumps(PAGES)))
+    _private_write(os.path.join(OUT, "wiki.css"), CSS.replace("__THEME__", theme_vars()))
+    _private_write(os.path.join(OUT, "search.js"), JS.replace("__INDEX__", json.dumps(PAGES)))
     return os.path.join(OUT, "index.html"), len(PAGES)
 
 

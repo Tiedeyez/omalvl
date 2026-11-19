@@ -304,6 +304,168 @@ class JobPrivacy(unittest.TestCase):
         self.assertEqual(S.load()["jobs"][-1]["labelV"], S.JOB_LABEL_VERSION)
 
 
+class EventPrivacy(unittest.TestCase):
+    """Review of 1.0.6: watcher events built from menu/panel arguments reached state and backups."""
+
+    def setUp(self):
+        fresh()
+
+    def test_argument_derived_names_are_fixed(self):
+        cls = S.classify_command
+        self.assertEqual(cls(["omarchy-menu", "toggle", "--token=sk-SECRET"]), "menu:other")
+        self.assertEqual(cls(["omarchy-menu", "summon", "appearance.theme"]), "menu:appearance")
+        self.assertEqual(cls(["omarchy-menu", "toggle", "theme"]), "menu:theme")
+        self.assertEqual(cls(["omarchy-menu"]), "menu:root")
+        self.assertEqual(cls(["omarchy-shell", "shell", "toggle", "evil.sk-SECRET"]), "panel:other")
+        self.assertEqual(cls(["omarchy-shell", "shell", "toggle", "omarchy.clipboard"]), "panel:omarchy.clipboard")
+        self.assertEqual(cls(["omarchy-shell", "shell", "toggle", "omarchy.menu", '{"menu":"sk-SECRET"}']),
+                         "menu:other")
+        self.assertEqual(cls(["/home/x/bin/omarchy-toggle-sk-SECRET"]), "toggle:other")
+        self.assertEqual(S.safe_event("layer:omarchy-sk-SECRET"), "layer:other")
+        self.assertEqual(S.safe_event("kb:panel:sk-SECRET"), "kb:panel:other")
+        self.assertEqual(S.safe_event("kb:float"), "kb:float")
+
+    def test_every_event_the_game_uses_is_kept(self):
+        text = "".join(open(os.path.join(ROOT, f)).read() for f in ("content.py", "skills.py"))
+        used = set(re.findall(r'"((?:kb:)?(?:menu|panel|toggle|window|capture|layer):[a-z0-9.-]+)"', text))
+        self.assertTrue(used)
+        for key in used:
+            self.assertEqual(S.safe_event(key), key, key)
+
+    def test_legacy_event_keys_scrubbed_everywhere(self):
+        st = S._read_state(S.STATE)
+        st["stats"].update({"menu:--token=sk-SECRET": 2, "kb:panel:evil.sk-SECRET": 1, "menu:other": 1,
+                            "toggle:nightlight": 4})
+        with open(S.STATE, "w") as f:
+            json.dump(st, f)
+        S.save(S.load())
+        for path in (S.STATE, S.BACKUP):
+            with open(path) as f:
+                self.assertNotIn("sk-SECRET", f.read(), path)
+        stats = S.load()["stats"]
+        self.assertEqual(stats["menu:other"], 3)
+        self.assertEqual(stats["kb:panel:other"], 1)
+        self.assertEqual(stats["toggle:nightlight"], 4)
+
+    def test_watcher_reads_only_your_processes(self):
+        d = tempfile.mkdtemp()
+        exe = os.path.join(d, "omarchy-toggle-nightlight")
+        with open(exe, "w") as f:
+            f.write("#!/bin/sh\nsleep 5\ntrue\n")
+        os.chmod(exe, 0o700)
+        import subprocess
+        proc = subprocess.Popen(["/bin/sh", exe, "sk-SECRET"])
+        try:
+            time.sleep(0.1)
+            self.assertEqual(S._proc_event(str(proc.pid), os.getuid()), "toggle:nightlight")
+            self.assertIsNone(S._proc_event(str(proc.pid), os.getuid() + 1))
+            self.assertIsNone(S._proc_event("self", os.getuid()))
+        finally:
+            proc.kill()
+            proc.wait()
+
+
+class LocalModelOnly(unittest.TestCase):
+    """Review of 1.0.6: urlopen honoured http_proxy, so the prompt could leave the machine."""
+
+    def _server(self, handler):
+        import http.server
+        import threading
+        srv = http.server.HTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.shutdown)
+        return srv
+
+    def setUp(self):
+        import http.server
+        self.proxied = []
+        proxied = self.proxied
+
+        class Proxy(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                proxied.append(self.path)
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"proxy")
+            do_POST = do_GET
+
+            def log_message(self, *a):
+                pass
+
+        class Model(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path == "/redirect":
+                    self.send_response(302)
+                    self.send_header("Location", "http://example.com/steal")
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+
+            def log_message(self, *a):
+                pass
+
+        proxy = self._server(Proxy)
+        model = self._server(Model)
+        self.old = S.LLM_URL, {k: os.environ.get(k) for k in ("http_proxy", "HTTP_PROXY", "no_proxy", "NO_PROXY")}
+        S.LLM_URL = "http://127.0.0.1:%d" % model.server_port
+        for k in ("http_proxy", "HTTP_PROXY"):
+            os.environ[k] = "http://127.0.0.1:%d" % proxy.server_port
+        for k in ("no_proxy", "NO_PROXY"):
+            os.environ.pop(k, None)
+
+    def tearDown(self):
+        S.LLM_URL = self.old[0]
+        for k, v in self.old[1].items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_direct_connection_ignores_proxy(self):
+        self.assertTrue(S._llm_up())
+        self.assertEqual(S._local_open(S.LLM_URL + "/health", 2).read(), b"ok")
+        self.assertEqual(self.proxied, [])
+
+    def test_redirects_refused(self):
+        import urllib.error
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            S._local_open(S.LLM_URL + "/redirect", 2)
+        cm.exception.close()
+        self.assertEqual(self.proxied, [])
+
+    def test_only_the_local_model_url(self):
+        with self.assertRaises(ValueError):
+            S._local_open("http://example.com/", 2)
+
+
+class WikiPrivacy(unittest.TestCase):
+    """Review of 1.0.6: wiki pages inherited the umask, so other local users could read them."""
+
+    def test_pages_are_owner_only_and_old_pages_fixed(self):
+        import stat
+        import wiki
+        fresh()
+        os.makedirs(wiki.OUT, exist_ok=True)
+        old = os.path.join(wiki.OUT, "index.html")
+        with open(old, "w") as f:
+            f.write("old")
+        os.chmod(old, 0o644)
+        os.chmod(wiki.OUT, 0o755)
+        prev = os.umask(0o022)
+        try:
+            wiki.build()
+        finally:
+            os.umask(prev)
+        self.assertEqual(stat.S_IMODE(os.stat(wiki.OUT).st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(os.stat(os.path.dirname(wiki.OUT)).st_mode), 0o700)
+        names = os.listdir(wiki.OUT)
+        self.assertIn("index.html", names)
+        for name in names:
+            self.assertEqual(stat.S_IMODE(os.stat(os.path.join(wiki.OUT, name)).st_mode), 0o600, name)
+
+
 class DailySysop(unittest.TestCase):
     """1.0.0-1.0.4: sysop_today raised KeyError on any save, so the daemon's daily block
     (Sysop, streak, job checks) aborted every active minute."""

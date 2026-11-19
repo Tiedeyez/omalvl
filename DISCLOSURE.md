@@ -24,7 +24,7 @@ The daemon wakes every 30 seconds. Two background threads watch Hyprland's event
 | CPU, disk and network totals | `/proc/stat`, `/proc/diskstats`, `/proc/net/dev` | Byte and tick counters, turned into XP. |
 | Window events (open, close, focus, workspace, fullscreen, float, group) | Hyprland's event socket (`.socket2.sock`) | Counts per event type. No window titles. |
 | The focused window's class and the cursor position | `hyprctl activewindow -j`, `hyprctl cursorpos -j` | Whether a game window is focused (classes in the built-in list or your `games` setting), and whether the pointer moved. Neither is stored. |
-| New processes, six times a second | `/proc/<pid>/cmdline` and `/proc/<pid>/stat` of processes that just appeared | One event name when it is an Omarchy keybind command (`omarchy-toggle-nightlight` → `toggle:nightlight`), a known tool (`nvim`, `btop`) or an AI agent / local model runtime. Arguments are not stored. |
+| New processes, six times a second | `/proc/<pid>/cmdline` and `/proc/<pid>/stat` of **your own** processes that just appeared (other users' processes are skipped before anything is read) | One event name when it is an Omarchy keybind command (`omarchy-toggle-nightlight` → `toggle:nightlight`), a known tool (`nvim`, `btop`) or an AI agent / local model runtime. Event names come from a fixed list of Omarchy's own menus, panels, toggles, window and capture commands; any other name is counted as `menu:other`, `panel:other` and so on, so no argument is ever stored. Older saves are folded the same way on the next save. |
 | Running AI agents' and local models' CPU time | `ps -eo comm=`, `/proc/<pid>/stat` | CPU seconds, turned into Agents XP (agent CLIs) and Models XP (local runtimes). |
 | Shell history: `~/.bash_history`, `~/.zsh_history`, `~/.local/share/fish/fish_history` | Read from the last position onwards, at most 1 MiB per tick | Command counts, plus names from a fixed allowlist and fixed safe pairs (for example `git` and `git log`). Arbitrary words, arguments and environment assignments are not stored. On the first save after updating, old arbitrary `cmd:` / `cmd2:` counters are removed from state and up to 256 app backup JSON files (64 MiB total); if this limit is exceeded, the program warns that older files need manual review or removal. Turn it off with `"shellHistory": false`. |
 | Package installs and upgrades | `/var/log/pacman.log`, streamed line by line | Two counts. |
@@ -48,7 +48,7 @@ OmaLvL reads only the paths listed above. It does not read general documents, wi
 | `~/.local/state/omalvl/weekly/` | A short text report each week, written atomically with private mode `0600`. |
 | `~/.local/state/omalvl/jobs/` | Output and exit codes of jobs you queue with `omalvl run`, private mode `0600`. The state file (and so its backups) keeps only the job's program name, such as `make ...`; its arguments are never saved. Job labels from releases before 1.0.6 are re-cut to the program name on the next load or save, before any backup is written, and marked with `labelV` so the clean-up never has to guess from the text. |
 | The folder named by `offsite` in your config | A daily off-machine copy (60 kept), written atomically with private mode `0600`. Off unless you set it. |
-| `~/.local/share/omalvl/wiki/` | The offline wiki, only when you run `omalvl wiki`. |
+| `~/.local/share/omalvl/wiki/` | The offline wiki, only when you run `omalvl wiki`. It shows your stats and some machine details, so the folder is owner-only (`0700`) and every page is `0600`; pages from older builds are corrected on the next build. |
 | `~/Pictures/omalvl/` (or `--out`) | A wallpaper PNG, only when you run `omalvl wallpaper`. Nothing sets it as your background; you run `omarchy-theme-bg-set` yourself. |
 
 ## Subprocesses
@@ -64,7 +64,7 @@ Commands are launched by an absolute path, preferring `/usr/bin/<name>` and fall
 
 ## Network
 
-The only HTTP request is to `http://127.0.0.1:8080` (a local model on your own machine), and only when you press "Explain it". OmaLvL makes no remote HTTP requests and has no telemetry, analytics, account service or auto-update. An optional offsite backup is a filesystem write to the folder you configure, not an HTTP upload; if that folder is synced, the sync service handles transfer.
+The only HTTP request is to `http://127.0.0.1:8080` (a local model on your own machine), and only when you press "Explain it". It is a direct loopback connection: proxy settings such as `http_proxy` are ignored and redirects are refused, so the prompt cannot be passed on. OmaLvL makes no remote HTTP requests and has no telemetry, analytics, account service or auto-update. An optional offsite backup is a filesystem write to the folder you configure, not an HTTP upload; if that folder is synced, the sync service handles transfer.
 
 ## Fair play
 
