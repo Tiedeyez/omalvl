@@ -108,7 +108,7 @@ There is no admin override in the public release. `omalvl add` and `omalvl agent
 
 ## Privacy
 
-OmaLvL processes activity locally. It stores command counts and a fixed allowlist of safe command names and subcommands; arguments and environment assignments are not retained. On the first save after updating, legacy arbitrary prefixes are removed from the current state and up to 256 app backup JSON files (64 MiB total). If older backups exceed those limits, OmaLvL warns that some need manual review or removal. If you enable offsite backups, it writes private save copies to the folder you choose, which may be synced elsewhere. The optional Sysop explanation uses a local model endpoint only when you press its button. [DISCLOSURE.md](DISCLOSURE.md) lists the exact files, data and subprocesses.
+OmaLvL processes activity locally. It stores command counts and a fixed allowlist of safe command names and subcommands; arguments and environment assignments are not retained. On the first save after updating, legacy arbitrary prefixes are removed from the current state and up to 256 app backup JSON files (64 MiB total). If older backups exceed those limits, OmaLvL warns that some need manual review or removal. Agent and local-model names come from a fixed list and only your own processes are read. App folders are owner-only (`0700`) and files `0600`. If you enable offsite backups, it writes private save copies to the folder you choose, which may be synced elsewhere. The optional Sysop explanation uses a local model endpoint only when you press its button. [DISCLOSURE.md](DISCLOSURE.md) lists the exact files, data and subprocesses.
 
 ## Develop
 

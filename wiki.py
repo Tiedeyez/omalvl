@@ -449,7 +449,8 @@ def machine_facts(tid):
             model = next((l.split(":", 1)[1].strip() for l in open("/proc/cpuinfo") if l.startswith("model name")), "?")
             f.append("CPU: %s, %d threads" % (model, os.cpu_count() or 0))
             if tid == "load-average":
-                f.append("Load right now: %s" % " ".join(open("/proc/loadavg").read().split()[:3]))
+                with open("/proc/loadavg") as lf:
+                    f.append("Load right now: %s" % " ".join(lf.read().split()[:3]))
         elif tid in ("ram", "swap"):
             f.append("RAM: %.1f GB · swap: %.1f GB" % (_meminfo("MemTotal"), _meminfo("SwapTotal")))
         elif tid == "hdd-ssd":

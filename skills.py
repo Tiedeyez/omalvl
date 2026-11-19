@@ -54,6 +54,7 @@ import re
 import urllib.request as urllib_request
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -372,6 +373,11 @@ def safe_event(key):
         return None
     inner = key[3:] if key.startswith("kb:") else key
     kind, sep, name = inner.partition(":")
+    if sep and kind in ("agent", "local_model"):   # process/script names: fixed vocabulary only
+        canon = canon_agent(name)
+        if kind == "local_model" and canon not in LOCAL_VOCAB:
+            canon = None
+        return kind + ":" + (canon or "other")
     if not sep or kind not in EVENT_NAMES:
         return key
     if name not in EVENT_NAMES[kind]:
@@ -420,14 +426,45 @@ def _scrub_jobs(jobs):
     return changed
 
 
+def _scrub_tree(tree):
+    """Keybind tree ranks are keyed by event name: fold unknown names like the stats (best rank wins)."""
+    if not isinstance(tree, dict):
+        return False
+    changed = False
+    for key in list(tree):
+        safe = safe_event(key)
+        if safe != key:
+            v = tree.pop(key)
+            if safe and isinstance(v, int):
+                tree[safe] = max(tree.get(safe, 0), v)
+            changed = True
+    return changed
+
+
+# Bumped whenever the scrub rules change, so backups written by older builds are cleaned again.
+# 2 (1.0.8): agent/model names, keybind tree keys, derived views dropped from older backups.
+PRIVACY_VERSION = 2
+
+
 def _scrub_private(data):
-    """Everything persisted from shell input: history counters, watcher events and job commands."""
+    """Everything persisted from shell input: history counters, watcher events, tree ranks, job commands."""
     if not isinstance(data, dict):
         return False
     a = _scrub_history_stats(data.get("stats"))
     b = _scrub_event_stats(data.get("stats"))
     c = _scrub_jobs(data.get("jobs"))
-    return a or b or c
+    d = _scrub_tree(data.get("tree"))
+    return a or b or c or d
+
+
+def _raw_state(data):
+    """Only the raw state keys: derived views (treeInfo, jobInfo, ...) an older build wrote are dropped;
+    load() and snapshot() rebuild them from the scrubbed state."""
+    out = {k: data[k] for k in STATE_KEYS if k in data}
+    if not isinstance(out.get("meta"), dict):
+        out["meta"] = {}
+    out["meta"]["privV"] = PRIVACY_VERSION
+    return out
 
 
 def _scrub_history_stats(stats):
@@ -495,8 +532,9 @@ def load():
 def save(data, allow_drop=False):
     # Persist the enriched view (skills, questLog, diary, ...) alongside the raw
     # state so the shell widget renders straight from the file.
-    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    _private_dir(os.path.dirname(STATE))
     _scrub_private(data)
+    data["meta"]["privV"] = PRIVACY_VERSION
     payload = {k: data[k] for k in STATE_KEYS}
     payload.update(snapshot(data))
     text = json.dumps(payload)
@@ -520,13 +558,13 @@ def save(data, allow_drop=False):
     day = time.strftime("%Y-%m-%d")
     daily = os.path.join(BACKUP_DIR, "skills-%s.json" % day)
     if not os.path.exists(daily):
-        os.makedirs(BACKUP_DIR, exist_ok=True)
+        _private_dir(BACKUP_DIR)
         _atomic_write(daily, text)
         _prune(BACKUP_DIR, BACKUP_DAYS)
     off = _offsite_dir()
     if off and not os.path.exists(os.path.join(off, "skills-%s.json" % day)):
         try:
-            os.makedirs(off, exist_ok=True)
+            _private_dir(off)
             _atomic_write(os.path.join(off, "skills-%s.json" % day), text)
             _prune(off, OFFSITE_DAYS)
         except OSError:
@@ -545,12 +583,23 @@ def snapshot_file(tag):
     """Copy the current state to backups/skills-<tag>-<time>.json (kept, never pruned)."""
     if not os.path.exists(STATE):
         return None
-    os.makedirs(BACKUP_DIR, exist_ok=True)
+    _private_dir(BACKUP_DIR)
     out = os.path.join(BACKUP_DIR, "skills-%s-%s.json" % (tag, time.strftime("%Y%m%d-%H%M%S")))
     data = _read_state(STATE)
     _scrub_private(data)
-    _atomic_write(out, json.dumps(data))
+    _atomic_write(out, json.dumps(_raw_state(data)))   # never copy an older build's derived views
     return out
+
+
+def _private_dir(path):
+    """Create an app-owned folder as 0700, and tighten one an older build made with the umask."""
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    try:
+        st = os.stat(path, follow_symlinks=False)
+        if st.st_uid == os.getuid() and stat.S_ISDIR(st.st_mode) and stat.S_IMODE(st.st_mode) & 0o077:
+            os.chmod(path, 0o700)
+    except OSError:
+        pass
 
 
 def _atomic_write(path, text):
@@ -583,10 +632,53 @@ def _scrub_legacy_backup(path):
         data = json.loads(read_capped(path, 4 * 1024 * 1024))
     except (OSError, ValueError):
         return False
-    if not isinstance(data, dict) or not _scrub_private(data):
+    if not isinstance(data, dict):
         return True
-    _atomic_write(path, json.dumps(data))
+    meta = data.get("meta")
+    current = isinstance(meta, dict) and isinstance(meta.get("privV"), int) and meta["privV"] >= PRIVACY_VERSION
+    if not _scrub_private(data) and current:
+        return True
+    # An older build's backup: its derived views (treeInfo, jobInfo[].cmd ...) were built from
+    # unscrubbed data, so keep only the scrubbed raw state.
+    _atomic_write(path, json.dumps(data if current else _raw_state(data)))
     return True
+
+
+def _tighten_legacy_files():
+    """Older builds wrote job logs, exit files, weekly reports and kept-aside saves with the umask:
+    make every app-owned file 0600 and folder 0700 (our own regular files only, never a symlink)."""
+    me = os.getuid()
+    base = os.path.dirname(STATE)
+    for folder in (base, BACKUP_DIR, JOB_DIR, os.path.join(base, "weekly")):
+        try:
+            st = os.stat(folder, follow_symlinks=False)
+        except OSError:
+            continue
+        if not stat.S_ISDIR(st.st_mode) or st.st_uid != me:
+            continue
+        if stat.S_IMODE(st.st_mode) & 0o077:
+            try:
+                os.chmod(folder, 0o700)
+            except OSError:
+                pass
+        try:
+            with os.scandir(folder) as entries:
+                for n, entry in enumerate(entries):
+                    if n >= 4096:
+                        break
+                    try:
+                        est = entry.stat(follow_symlinks=False)
+                        if (stat.S_ISREG(est.st_mode) and est.st_uid == me
+                                and stat.S_IMODE(est.st_mode) & 0o077):
+                            fd = os.open(entry.path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+                            try:
+                                os.fchmod(fd, 0o600)
+                            finally:
+                                os.close(fd)
+                    except OSError:
+                        continue
+        except OSError:
+            continue
 
 
 def _scrub_legacy_backups():
@@ -595,6 +687,7 @@ def _scrub_legacy_backups():
     if _LEGACY_BACKUPS_SCRUBBED:
         return
     _LEGACY_BACKUPS_SCRUBBED = True
+    _tighten_legacy_files()
     folders = [BACKUP_DIR]
     offsite = _offsite_dir()
     if offsite:
@@ -635,7 +728,7 @@ def _scrub_legacy_backups():
 
 class _Lock:
     def __enter__(self):
-        os.makedirs(os.path.dirname(LOCK), exist_ok=True)
+        _private_dir(os.path.dirname(LOCK))
         self.f = open(LOCK, "w")
         fcntl.flock(self.f, fcntl.LOCK_EX)
         return self
@@ -1917,19 +2010,42 @@ AGENT_NAMES = {
     "ollama", "llamafile", "koboldcpp", "lms", "lm studio", "lm-studio", "jan", "localai",
     "local-ai", "gpt4all", "tabby", "mistralrs-server", "mlc_llm", "tgi", "sglang",
 }
-AGENT_PREFIXES = ("ollama", "llama-", "llama.cpp", "vllm", "koboldcpp", "whisper-", "text-generation")
 # The subset that runs the model itself, on this machine (the Off the Grid quest).
 LOCAL_RUNTIMES = {"ollama", "llamafile", "koboldcpp", "lms", "lm studio", "lm-studio", "jan", "localai",
                   "local-ai", "gpt4all", "tabby", "mistralrs-server", "mlc_llm", "tgi", "sglang"}
-LOCAL_PREFIXES = ("ollama", "llama-", "llama.cpp", "vllm", "koboldcpp", "whisper-", "text-generation")
 INTERPRETERS = {"node", "python", "python3", "bun", "deno"}
+# A prefix match is saved under one fixed name, never the rest of the process or script name.
+PREFIX_CANON = (("ollama", "ollama"), ("llama-", "llama.cpp"), ("llama.cpp", "llama.cpp"), ("vllm", "vllm"),
+                ("koboldcpp", "koboldcpp"), ("whisper-", "whisper.cpp"), ("text-generation", "text-generation"))
+AGENT_VOCAB = frozenset(AGENT_NAMES | {c for _, c in PREFIX_CANON})
+LOCAL_VOCAB = frozenset(LOCAL_RUNTIMES | {c for _, c in PREFIX_CANON})
+
+
+def canon_agent(name):
+    """The fixed name an agent/model process is counted as, or None."""
+    if not isinstance(name, str):
+        return None
+    c = name.lower()
+    if c in AGENT_VOCAB:
+        return c
+    for prefix, canon in PREFIX_CANON:
+        if c.startswith(prefix):
+            return canon
+    return None
+
+
+def _owned_by_me(pid, me=None):
+    try:
+        return os.stat("/proc/%s" % pid).st_uid == (os.getuid() if me is None else me)
+    except OSError:
+        return False
 
 
 def agent_name(comm, pid=None):
     """The agent/model name a process belongs to, or None."""
     c = comm.lower()
-    if c in AGENT_NAMES or c.startswith(AGENT_PREFIXES):
-        return c.split("_")[0] if c.startswith("ollama") else c
+    if canon_agent(c):
+        return canon_agent(c)
     # newer Node names its main thread "node-MainThread"; python may be python3.14
     if pid is not None and (c in INTERPRETERS or c.startswith(("node-", "python3.", "bun-"))):
         try:
@@ -1941,20 +2057,23 @@ def agent_name(comm, pid=None):
             b = os.path.basename(a.decode("utf-8", "replace")).lower()
             for suffix in (".js", ".mjs", ".py"):
                 b = b[:-len(suffix)] if b.endswith(suffix) else b
-            if b in AGENT_NAMES or b.startswith(AGENT_PREFIXES):
-                return b
+            if canon_agent(b):
+                return canon_agent(b)
     return None
 
 
 def is_local_runtime(name):
-    return name in LOCAL_RUNTIMES or name.startswith(LOCAL_PREFIXES)
+    return name in LOCAL_VOCAB
 
 
 def agent_scan():
-    """({running agent/model names}, CPU ticks of agent CLIs, CPU ticks of local model runtimes)."""
+    """({running agent/model names}, CPU ticks of agent CLIs, CPU ticks of local model runtimes).
+
+    Only the current user's processes are read, and names come from the fixed AGENT_VOCAB."""
     names, total, local = set(), 0, 0
+    me = os.getuid()
     for pid in os.listdir("/proc"):
-        if not pid.isdigit():
+        if not pid.isdigit() or not _owned_by_me(pid, me):
             continue
         try:
             with open("/proc/%s/stat" % pid) as f:
@@ -1975,7 +2094,8 @@ def agent_scan():
 
 def processes():
     try:
-        out = subprocess.run([tool("ps"), "-eo", "comm="], capture_output=True, text=True, timeout=5).stdout
+        out = subprocess.run([tool("ps"), "-o", "comm=", "-u", str(os.getuid())],
+                             capture_output=True, text=True, timeout=5).stdout
     except (OSError, subprocess.SubprocessError):
         return set()
     return {l.strip().lower() for l in out.splitlines()}
@@ -2376,9 +2496,9 @@ def _proc_event(pid, me):
     """The event key for one new pid, or None. Other users' processes are never read."""
     if not pid.isdigit():
         return None
+    if not _owned_by_me(pid, me):
+        return None
     try:
-        if os.stat("/proc/%s" % pid).st_uid != me:
-            return None
         with open("/proc/%s/cmdline" % pid, "rb") as f:
             argv = [a.decode("utf-8", "replace") for a in f.read().split(b"\0") if a]
     except OSError:
@@ -2643,7 +2763,7 @@ def cmd_run(argv):
         print("usage: omalvl run <command...>   (a long job: a build, a download, local-llm ...)\n"
               "       omalvl run --pid <pid> [label]   (watch something already running)", file=sys.stderr)
         return 2
-    os.makedirs(JOB_DIR, exist_ok=True)
+    _private_dir(JOB_DIR)
     with _Lock():
         data = load()
         used = {p["slot"] for p in data["jobs"]}
@@ -2894,7 +3014,7 @@ def maybe_weekly_report():
         save(data)
     text = week_report()
     out = os.path.join(os.path.dirname(STATE), "weekly", week + ".txt")
-    os.makedirs(os.path.dirname(out), exist_ok=True)
+    _private_dir(os.path.dirname(out))
     _atomic_write(out, text + "\n")
     notify("Your week in Omarchy", text.split("\n", 1)[1] if "\n" in text else text)
 

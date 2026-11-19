@@ -365,6 +365,173 @@ class EventPrivacy(unittest.TestCase):
             proc.wait()
 
 
+class AgentAndBackupPrivacy(unittest.TestCase):
+    """Review of 1.0.7: agent_scan kept names from other users' interpreter processes, and the keybind
+    tree plus older backups' derived views (treeInfo, jobInfo[].cmd) carried old arguments forward."""
+
+    def setUp(self):
+        fresh()
+
+    def _offsite(self):
+        off = tempfile.mkdtemp()
+        old = S.OFFSITE
+        S.OFFSITE = os.path.join(off, "omalvl")
+        self.addCleanup(setattr, S, "OFFSITE", old)
+        return S._offsite_dir()
+
+    def test_agent_names_are_fixed(self):
+        self.assertEqual(S.canon_agent("llama-sk-SECRET"), "llama.cpp")
+        self.assertEqual(S.canon_agent("ollama_llama_server"), "ollama")
+        self.assertEqual(S.canon_agent("whisper-sk-SECRET"), "whisper.cpp")
+        self.assertEqual(S.canon_agent("claude"), "claude")
+        self.assertIsNone(S.canon_agent("sk-SECRET"))
+        self.assertEqual(S.safe_event("agent:llama-sk-SECRET"), "agent:llama.cpp")
+        self.assertEqual(S.safe_event("agent:sk-SECRET"), "agent:other")
+        self.assertEqual(S.safe_event("local_model:vllm-sk-SECRET"), "local_model:vllm")
+        self.assertEqual(S.safe_event("local_model:claude"), "local_model:other")
+        for name in S.AGENT_VOCAB:
+            self.assertEqual(S.safe_event("agent:" + name), "agent:" + name, name)
+            self.assertEqual(S.canon_agent(name), name, name)
+        for name in S.LOCAL_VOCAB:
+            self.assertTrue(S.is_local_runtime(name), name)
+            self.assertEqual(S.safe_event("local_model:" + name), "local_model:" + name, name)
+        self.assertTrue(S.is_local_runtime("llama.cpp") and S.is_local_runtime("whisper.cpp"))
+        self.assertFalse(S.is_local_runtime("claude"))
+
+    def test_agent_scan_reads_only_your_processes(self):
+        import subprocess
+        d = tempfile.mkdtemp()
+        script = os.path.join(d, "llama-sk-SECRET.py")
+        with open(script, "w") as f:
+            f.write("import time\ntime.sleep(5)\n")
+        proc = subprocess.Popen([sys.executable, script, "--api-key", "sk-SECRET"])
+        try:
+            time.sleep(0.2)
+            names, _, _ = S.agent_scan()
+            self.assertIn("llama.cpp", names)
+            self.assertFalse(any("SECRET" in n for n in names), names)
+            self.assertTrue(S._owned_by_me(str(proc.pid)))
+            self.assertFalse(S._owned_by_me(str(proc.pid), os.getuid() + 1))
+            real = S._owned_by_me
+            S._owned_by_me = lambda pid, me=None: False      # every process belongs to someone else
+            try:
+                self.assertEqual(S.agent_scan()[0], set())
+            finally:
+                S._owned_by_me = real
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_process_list_is_your_own(self):
+        import subprocess
+        seen = []
+        real = subprocess.run
+
+        def fake(args, **kw):
+            seen.append(list(args))
+            return real(["true"], capture_output=True, text=True)
+        S.subprocess.run = fake
+        try:
+            S.processes()
+        finally:
+            S.subprocess.run = real
+        self.assertIn("-u", seen[0])
+        self.assertEqual(seen[0][seen[0].index("-u") + 1], str(os.getuid()))
+        self.assertNotIn("-e", " ".join(seen[0]).split())
+
+    def _legacy(self):
+        st = S._read_state(S.STATE)
+        st["tree"] = {"menu:--token=sk-SECRET": 2, "panel:evil.sk-SECRET": 3, "toggle:nightlight": 1,
+                      "menu:other": 1}
+        st["stats"].update({"agent:llama-sk-SECRET": 1, "local_model:llama-sk-SECRET": 1, "kb:menu:sk-SECRET": 9})
+        st["jobs"] = [{"slot": "Alpha", "cmd": "deploy --token sk-SECRET", "planted": 1, "pid": 1,
+                       "exitFile": None, "log": None, "done": None, "exit": None}]
+        st["treeInfo"] = [{"id": "keys", "nodes": [{"id": "menu:sk-SECRET", "name": "Sk-SECRET menu"}]}]
+        st["jobInfo"] = [{"slot": "Alpha", "cmd": "deploy --token sk-SECRET"}]
+        st["meta"].pop("privV", None)
+        return st
+
+    def test_legacy_tree_and_backup_views_scrubbed(self):
+        off = self._offsite()
+        st = self._legacy()
+        with open(S.STATE, "w") as f:
+            json.dump(st, f)
+        os.makedirs(S.BACKUP_DIR, exist_ok=True)
+        os.makedirs(off, exist_ok=True)
+        old_files = [os.path.join(S.BACKUP_DIR, "skills-2020-01-01.json"),
+                     os.path.join(S.BACKUP_DIR, "skills-manual-20200101-000000.json"),
+                     os.path.join(off, "skills-2020-01-01.json")]
+        for path in old_files:
+            with open(path, "w") as f:
+                json.dump(st, f)
+        # a manual backup taken before the first save on the new build must not copy the old views
+        snap = S.snapshot_file("manual")
+        with open(snap) as f:
+            self.assertNotIn("sk-SECRET", f.read())
+        S._LEGACY_BACKUPS_SCRUBBED = False
+        S.save(S.load())
+        written = [S.STATE, S.BACKUP]
+        for folder in (S.BACKUP_DIR, off):
+            written += [os.path.join(folder, n) for n in os.listdir(folder) if n.endswith(".json")]
+        self.assertGreaterEqual(len(written), 6)
+        for path in written:
+            with open(path) as f:
+                self.assertNotIn("SECRET", f.read(), path)
+        data = S.load()
+        self.assertEqual(data["tree"]["menu:other"], 2)          # best rank wins
+        self.assertEqual(data["tree"]["panel:other"], 3)
+        self.assertEqual(data["tree"]["toggle:nightlight"], 1)
+        self.assertEqual(data["stats"]["agent:llama.cpp"], 1)
+        self.assertEqual(data["stats"]["kb:menu:other"], 9)
+        for path in old_files:                                   # still restorable, XP intact
+            old = S._read_state(path)
+            self.assertEqual(old["xp"], st["xp"])
+            self.assertEqual(old["meta"]["privV"], S.PRIVACY_VERSION)
+            self.assertNotIn("treeInfo", old)
+
+    def test_current_backups_are_not_rewritten(self):
+        S._LEGACY_BACKUPS_SCRUBBED = False
+        S.save(S.load())
+        daily = os.path.join(S.BACKUP_DIR, "skills-%s.json" % time.strftime("%Y-%m-%d"))
+        os.utime(daily, (1, 1))
+        S._LEGACY_BACKUPS_SCRUBBED = False
+        S.save(S.load())
+        self.assertEqual(os.stat(daily).st_mtime, 1)
+        with open(daily) as f:
+            self.assertIn("treeInfo", json.load(f))          # a current backup keeps its full view
+
+    def test_legacy_file_modes_tightened(self):
+        os.makedirs(S.JOB_DIR, exist_ok=True)
+        weekly = os.path.join(os.path.dirname(S.STATE), "weekly")
+        os.makedirs(weekly, exist_ok=True)
+        os.chmod(S.JOB_DIR, 0o755)
+        log = os.path.join(S.JOB_DIR, "Alpha-1.log")
+        rep = os.path.join(weekly, "2020-W01.txt")
+        outside = os.path.join(tempfile.mkdtemp(), "not-ours.txt")
+        for path in (log, rep, outside):
+            with open(path, "w") as f:
+                f.write("x")
+            os.chmod(path, 0o644)
+        link = os.path.join(S.JOB_DIR, "link.log")
+        if os.path.lexists(link):
+            os.remove(link)
+        os.symlink(outside, link)
+        S._tighten_legacy_files()
+        self.assertEqual(os.stat(log).st_mode & 0o777, 0o600)
+        self.assertEqual(os.stat(rep).st_mode & 0o777, 0o600)
+        self.assertEqual(os.stat(S.JOB_DIR).st_mode & 0o777, 0o700)
+        self.assertEqual(os.stat(outside).st_mode & 0o777, 0o644)   # a symlink target is never touched
+        os.remove(link)
+
+    def test_new_folders_are_private(self):
+        for d in (S.BACKUP_DIR, S.JOB_DIR):
+            os.chmod(d, 0o755) if os.path.isdir(d) else None
+        S._LEGACY_BACKUPS_SCRUBBED = False
+        S.save(S.load())
+        self.assertEqual(os.stat(os.path.dirname(S.STATE)).st_mode & 0o777, 0o700)
+        self.assertEqual(os.stat(S.BACKUP_DIR).st_mode & 0o777, 0o700)
+
+
 class LocalModelOnly(unittest.TestCase):
     """Review of 1.0.6: urlopen honoured http_proxy, so the prompt could leave the machine."""
 
