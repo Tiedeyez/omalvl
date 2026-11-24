@@ -54,7 +54,7 @@ Panel {
       onStreamFinished: { try { root.guide = JSON.parse(text) } catch (e) {} }
     }
   }
-  Process { id: runner; onRunningChanged: if (!running) root.busy = "" }
+  Process { id: runner; onRunningChanged: if (!running) { root.busy = ""; root.refreshState() } }
   function run(args) {
     if (runner.running) return
     root.busy = args.join(" ")
@@ -86,14 +86,36 @@ Panel {
       waitForEnd: true
       onStreamFinished: root.reload(text)
     }
-    onExited: stateRefresh.restart()
+    onExited: { root.stateLoadedAt = Date.now(); stateRefresh.restart() }
+  }
+  // Refreshing the state means starting Python, so do it only when there is something new:
+  // every few seconds a plain `stat` reads the save file's timestamp (its contents never reach
+  // QML), and the engine runs when that changed, while the panel is open, or once a minute.
+  readonly property string statePath: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/omalvl/state.json"
+  property string stateStamp: ""
+  property real stateLoadedAt: 0
+  function refreshState() { if (!stateProc.running) stateProc.running = true }
+  Process {
+    id: stampProc
+    command: ["/usr/bin/stat", "-c", "%y %s", "--", root.statePath]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var stamp = text.trim().slice(0, 80)
+        var changed = stamp === "" || stamp !== root.stateStamp
+        root.stateStamp = stamp
+        if (changed || root.opened || Date.now() - root.stateLoadedAt > 60000) root.refreshState()
+        else stateRefresh.restart()
+      }
+    }
   }
   Timer {
     id: stateRefresh
     interval: 3000
     repeat: false
-    onTriggered: if (!stateProc.running) stateProc.running = true
+    onTriggered: if (!stateProc.running && !stampProc.running) stampProc.running = true
   }
+  onOpenedChanged: if (opened) root.refreshState()
   // The activity sampler (single instance; extra copies exit on the lock).
   Process {
     id: daemon
@@ -1362,20 +1384,21 @@ Panel {
                 Repeater {
                   model: tier.modelData.tasks
                   delegate: Row {
+                    id: task
                     required property var modelData
-                    width: parent.width
+                    width: parent ? parent.width : 0   // the row outlives its parent for a moment on reload
                     spacing: root.u * 3
                     Rectangle {
                       anchors.verticalCenter: parent.verticalCenter
                       width: root.u * 4; height: width
-                      color: parent.modelData.done ? root.tint("green") : "transparent"
-                      border.color: parent.modelData.done ? root.tint("green") : root.dim
+                      color: task.modelData.done ? root.tint("green") : "transparent"
+                      border.color: task.modelData.done ? root.tint("green") : root.dim
                       border.width: root.u
                     }
                     Body {
-                      width: parent.width - root.u * 7
-                      text: parent.modelData.text + (parent.modelData.need > 1 && !parent.modelData.done ? "  (" + root.n(parent.modelData.have) + " / " + root.n(parent.modelData.need) + ")" : "")
-                      color: parent.modelData.done ? root.dim : root.fg
+                      width: task.width - root.u * 7
+                      text: task.modelData.text + (task.modelData.need > 1 && !task.modelData.done ? "  (" + root.n(task.modelData.have) + " / " + root.n(task.modelData.need) + ")" : "")
+                      color: task.modelData.done ? root.dim : root.fg
                     }
                   }
                 }
