@@ -797,5 +797,308 @@ class FairPlay(unittest.TestCase):
         self.assertIn("Workload", fp["unverified"])
 
 
+class QaBatch(unittest.TestCase):
+    """Regressions from the 2026-11-27 end-to-end QA (1.0.10)."""
+
+    def setUp(self):
+        fresh()
+        self._notify = S.notify
+        S.notify = lambda *a: None
+
+    def tearDown(self):
+        S.notify = self._notify
+
+    def call(self, fn, *argv):
+        import contextlib
+        import io
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = fn(list(argv))
+        return rc or 0, out.getvalue(), err.getvalue()
+
+    @staticmethod
+    def read(path):
+        with open(path) as f:
+            return f.read()
+
+    def edit_save(self, change):
+        st = json.loads(self.read(S.STATE))
+        change(st)
+        with open(S.STATE, "w") as f:
+            json.dump(st, f)
+
+    def main(self, *argv):
+        old = sys.argv
+        sys.argv = ["omalvl"] + list(argv)
+        try:
+            return self.call(lambda a: S.main())
+        finally:
+            sys.argv = old
+
+    # ---- award input
+    def test_task_xp_must_be_a_positive_number(self):
+        for bad in ("-500", "0", "abc", "inf", "-inf", "nan", ""):
+            rc, _, err = self.call(S.cmd_task, "write", bad)
+            self.assertEqual(rc, 2, bad)
+            self.assertIn("positive number", err)
+        self.assertEqual(S.load()["xp"]["editing"], 0)
+        self.assertEqual(S.load()["fair"]["awards"], [])
+
+    def test_add_rejects_infinite_and_nonsense_amounts(self):
+        for bad in ("inf", "-inf", "nan", "abc", ""):
+            rc, _, err = self.call(S.cmd_add, "shell", bad)
+            self.assertEqual(rc, 2, bad)
+        self.assertEqual(self.call(S.cmd_add, "shell", "-5")[0], 2)
+        self.assertEqual(self.call(S.cmd_add, "shell", "1e2")[0], 0)
+        self.assertEqual(S.load()["xp"]["shell"], 100)
+
+    def test_engine_refuses_a_negative_award(self):
+        S.grant({"shell": 500}, why="measured", events={"cmd": 1})
+        r = S.grant({"shell": -400}, why="task: write", source="manual")
+        self.assertEqual(r.voided, "not a positive amount")
+        self.assertEqual(S.load()["xp"]["shell"], 500)
+
+    def test_reason_checks_look_at_the_work_not_the_label(self):
+        # "agent [medium]: " used to count towards the minimum length, and a new tier hid a duplicate
+        rc, _, err = self.call(lambda a: S.cmd_add(a, agent=True), "editing", "medium", "short")
+        self.assertEqual(rc, 1)
+        self.assertIn("no real description", err)
+        ok = lambda *a: self.call(lambda v: S.cmd_add(v, agent=True), *a)[0]
+        self.assertEqual(ok("editing", "easy", "fixed the panel layout bug"), 0)
+        self.assertEqual(ok("commits", "medium", "Fixed the panel layout bug!"), 1)
+        self.assertEqual(S.load()["fair"]["awards"][-1]["void"], "the same work was already awarded")
+
+    def test_reason_is_stored_as_one_plain_line(self):
+        self.call(lambda a: S.cmd_add(a, agent=True), "scripting", "easy", "line one\nline two \x1b[31mred\x1b[0m \u202edone")
+        d = S.load()
+        for text in (d["log"][-1]["why"], d["fair"]["awards"][-1]["reason"]):
+            self.assertTrue(text.isprintable(), repr(text))
+            self.assertNotIn("\n", text)
+        self.assertEqual(S._plain("a\tb\r\n  c\x07"), "a b c")
+
+    def test_voided_total_stays_readable(self):
+        S.grant({"shell": 10 ** 14}, why="omalvl add", source="manual")
+        f = S.load()["fair"]
+        self.assertEqual(f["voided"], 1)
+        self.assertLessEqual(f["voidedXp"], anticheat.VOID_COUNT_MAX)
+
+    def test_log_prints_the_whole_void_reason(self):
+        S.grant({"shell": 50_000}, why="omalvl add", source="manual")
+        _, out, _ = self.call(S.cmd_log)
+        self.assertIn("more than 30,000 XP in one award", out)
+
+    # ---- jobs
+    def test_collect_sees_a_finished_job_without_the_daemon(self):
+        self.assertEqual(self.call(S.cmd_run, "true")[0], 0)
+        for _ in range(100):
+            if os.path.exists(S.load()["jobs"][0]["exitFile"]):
+                break
+            time.sleep(0.05)
+        rc, out, _ = self.call(S.cmd_collect)
+        self.assertIn("Collected slot Alpha", out)
+        self.assertEqual(S.load()["jobs"], [])
+
+    def test_run_keeps_the_quoting_of_its_arguments(self):
+        marker = os.path.join(TMP, "two words.txt")
+        self.call(S.cmd_run, "sh", "-c", "exit 3")                     # was run as: sh -c exit 3  (exit 0)
+        self.call(S.cmd_run, "touch", marker)                          # was: touch two; touch words.txt
+        self.call(S.cmd_run, "exit 4 && true")                         # one argument stays a shell line
+        for _ in range(100):
+            if all(os.path.exists(j["exitFile"]) for j in S.load()["jobs"]):
+                break
+            time.sleep(0.05)
+        S.check_jobs(tell=False)
+        jobs = S.load()["jobs"]
+        self.assertEqual([j["exit"] for j in jobs], [3, 0, 4])
+        self.assertTrue(os.path.exists(marker))
+        self.assertEqual([j["cmd"] for j in jobs], ["sh ...", "touch ...", "exit ..."])
+
+    def test_run_pid_needs_a_real_number(self):
+        for bad in ([], ["abc"], ["0"], ["-1"], ["12x"]):
+            rc, _, err = self.call(S.cmd_run, "--pid", *bad)
+            self.assertEqual(rc, 2, bad)
+            self.assertIn("usage", err)
+        self.assertEqual(S.load()["jobs"], [])
+
+    def test_drop_frees_a_slot_without_xp(self):
+        self.call(S.cmd_run, "--pid", str(os.getpid()), "watching", "myself")
+        self.assertEqual(len(S.load()["jobs"]), 1)
+        self.assertEqual(self.call(S.cmd_collect)[1].split(".")[0], "Nothing to collect yet")
+        rc, out, _ = self.call(S.cmd_drop, "alpha")
+        self.assertEqual(rc, 0)
+        d = S.load()
+        self.assertEqual(d["jobs"], [])
+        self.assertEqual(d["xp"]["workload"], 0)
+        self.assertEqual(self.call(S.cmd_drop, "zeta")[0], 2)
+        self.assertEqual(self.call(S.cmd_collect, "zeta")[0], 2)
+
+    # ---- commands that used to print a traceback or nonsense
+    def test_backup_before_any_save(self):
+        for p in (S.STATE, S.BACKUP):
+            os.remove(p)
+        _, out, _ = self.call(S.cmd_backup)
+        self.assertIn("Nothing to back up yet", out)
+        self.assertNotIn("None", out)
+
+    def test_reset_checks_the_skill_before_copying(self):
+        before = set(os.listdir(S.BACKUP_DIR)) if os.path.isdir(S.BACKUP_DIR) else set()
+        rc, out, _ = self.call(S.cmd_reset, "nosuch")
+        self.assertEqual((rc, out), (2, ""))
+        self.assertEqual(set(os.listdir(S.BACKUP_DIR)) if os.path.isdir(S.BACKUP_DIR) else set(), before)
+
+    def test_wallpaper_to_an_unwritable_place(self):
+        rc, _, err = self.call(S.cmd_wallpaper, "--out", "/proc/omalvl-nope/x.png")
+        self.assertEqual(rc, 1)
+        self.assertIn("can't write the wallpaper", err)
+
+    def test_wallpaper_covers_the_screen(self):
+        out = os.path.join(TMP, "cover.png")
+        for size in ((1600, 900), (1366, 768), (1920, 1080), (2560, 1440), (3840, 2160)):
+            wallpaper.render(S.snapshot(), out, size)
+            with open(out, "rb") as f:
+                head = f.read(24)
+            w, h = int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+            self.assertTrue(size[0] <= w < size[0] + 16 and size[1] <= h < size[1] + 16, (size, w, h))
+
+    def test_quest_without_an_id(self):
+        rc, _, err = self.call(S.cmd_quest)
+        self.assertEqual(rc, 2)
+        self.assertIn("usage", err)
+
+    # ---- damaged saves
+    def test_wrong_shapes_in_a_save_are_repaired_on_load(self):
+        def damage(st):
+            st["xp"].update({"shell": "abc", "editing": None, "commits": -50, "focus": 1e30, "models": True})
+            st.update({"surge": 3.7, "updateDay": [1, 2], "signal": "x", "drop": 5})
+        self.edit_save(damage)
+        d = S.load()
+        self.assertEqual([d["xp"][k] for k in ("shell", "editing", "commits", "models")], [0, 0, 0, 0])
+        self.assertEqual(d["xp"]["focus"], S.XP_CAP)
+        self.assertEqual([d[k] for k in S.NULLABLE_DICT_KEYS], [None] * 4)
+        S.snapshot(d)
+
+    def test_a_damaged_save_gives_one_line_not_a_traceback(self):
+        def damage(st):
+            st["contract"]["streak"] = None
+            st["log"] = [{"t": {"a": 1}, "why": 5}]
+        self.edit_save(damage)
+        rc, _, err = self.main("week")
+        rc2, _, err2 = self.main("log")
+        for code, text in ((rc, err), (rc2, err2)):
+            if code:
+                self.assertEqual(code, 1)
+                self.assertIn("omalvl restore latest", text)
+                self.assertNotIn("Traceback", text)
+        self.assertTrue(rc or rc2)
+
+    # ---- files
+    def test_lock_files_never_follow_a_symlink_or_truncate(self):
+        victim = os.path.join(TMP, "victim.txt")
+        with open(victim, "w") as f:
+            f.write("keep me")
+        for lock in (S.LOCK, S.LOCK + ".daemon"):
+            if os.path.lexists(lock):
+                os.remove(lock)
+            os.symlink(victim, lock)
+            with self.assertRaises(OSError):
+                S._open_lock(lock)
+            os.remove(lock)
+        self.assertEqual(self.read(victim), "keep me")
+        with S._Lock():
+            pass
+        self.assertEqual(os.stat(S.LOCK).st_mode & 0o777, 0o600)      # created private
+        with open(S.LOCK, "w") as f:
+            f.write("old")
+        with S._Lock():
+            pass
+        self.assertEqual(self.read(S.LOCK), "old")                    # and never truncated
+
+    def test_leftovers_are_swept(self):
+        base = os.path.dirname(S.STATE)
+        old_tmp, new_tmp = os.path.join(base, ".state.json.bak.aaaa.tmp"), os.path.join(base, ".state.json.bbbb.tmp")
+        for p in (old_tmp, new_tmp):
+            open(p, "w").close()
+        os.utime(old_tmp, (time.time() - 7200,) * 2)
+        aside = []
+        for i in range(8):
+            p = "%s.corrupt-%d" % (S.STATE, 1000 + i)
+            open(p, "w").close()
+            os.utime(p, (time.time() - 1000 + i,) * 2)
+            aside.append(p)
+        link = os.path.join(base, ".linked.tmp")
+        os.symlink(S.STATE, link)
+        os.utime(link, (time.time() - 7200,) * 2, follow_symlinks=False)
+        S._sweep_leftovers()
+        self.assertFalse(os.path.exists(old_tmp))
+        self.assertTrue(os.path.exists(new_tmp))
+        self.assertEqual([os.path.exists(p) for p in aside], [False] * 3 + [True] * 5)
+        self.assertTrue(os.path.islink(link) and os.path.exists(S.STATE))
+        for p in [new_tmp, link] + aside[3:]:
+            os.remove(p)
+
+    def test_a_relative_offsite_folder_is_ignored(self):
+        old = S.OFFSITE
+        try:
+            S.OFFSITE = "5"
+            self.assertIsNone(S._offsite_dir())
+            S.OFFSITE = TMP + "/off"
+            self.assertTrue(S._offsite_dir().startswith(TMP))
+        finally:
+            S.OFFSITE = old
+
+    # ---- the keybind tree
+    def test_status_questions_and_helpers_are_not_actions(self):
+        cls = S.classify_command
+        self.assertEqual(cls(["omarchy-toggle-nightlight"]), "toggle:nightlight")
+        self.assertIsNone(cls(["omarchy-toggle-nightlight", "--status"]))
+        self.assertIsNone(cls(["bash", "/usr/bin/omarchy-toggle-idle", "--status"]))
+        self.assertIsNone(cls(["omarchy-capture-screenrecording", "--status"]))
+        self.assertEqual(cls(["omarchy-capture-screenrecording", "--stop-recording"]), "capture:screenrecording")
+        self.assertIsNone(cls(["omarchy-capture-screenrecording-process", "--pid", "5"]))
+        d = S.load()
+        d["stats"]["kb:capture:screenrecording-process"] = 147
+        names = [n["id"] for b in S.tree_info(d) for n in b["nodes"]]
+        self.assertNotIn("capture:screenrecording-process", names)
+
+    # ---- the sampler
+    def test_a_second_sampler_stands_by_instead_of_exiting(self):
+        import subprocess
+        env = dict(os.environ)
+        code = ("import sys, fcntl; sys.path.insert(0, %r); import skills as S; S._private_dir(S.os.path.dirname(S.LOCK));"
+                "f = S._open_lock(S.LOCK + '.daemon'); fcntl.flock(f, fcntl.LOCK_EX); print('held', flush=True);"
+                "sys.stdin.read()" % ROOT)
+        holder = subprocess.Popen([sys.executable, "-c", code], stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=env)
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), b"held")
+            second = subprocess.Popen([sys.executable, os.path.join(ROOT, "skills.py"), "daemon"], env=env,
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    second.wait(timeout=1.5)          # it used to return at once, and the panel respawned it
+            finally:
+                second.kill()
+                second.wait()
+        finally:
+            holder.kill()
+            holder.wait()
+            holder.stdin.close()
+            holder.stdout.close()
+
+    def test_the_engine_starts_without_urllib(self):
+        import subprocess
+        out = subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, %r); import skills; "
+                              "print('urllib.request' in sys.modules)" % ROOT],
+                             capture_output=True, text=True, env=dict(os.environ)).stdout.strip()
+        self.assertEqual(out, "False")
+
+    def test_panel_log_is_newest_first(self):
+        S.grant({"shell": 10}, why="first thing", events={"cmd": 1})
+        S.grant({"shell": 10}, why="second thing", events={"cmd": 1})
+        a = S.snapshot()["activity"]
+        self.assertEqual([e["why"] for e in a[:2]], ["second thing", "first thing"])
+        qml = self.read(os.path.join(ROOT, "Panel.qml"))
+        self.assertNotIn("root.activity.slice().reverse()", qml)
+
+
 if __name__ == "__main__":
     unittest.main()

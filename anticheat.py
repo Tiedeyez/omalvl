@@ -21,7 +21,9 @@ Two kinds of XP:
               * a single award is at most MAX_SINGLE (the master tier);
               * at most BURST_SKILLS different skills in BURST_WINDOW (a sweep across every
                 skill is the botting pattern, real work touches a few);
-              * the same reason twice in DUP_DAYS is voided, and a reason must say something;
+              * the same reason twice in DUP_DAYS is voided, and a reason must say something
+                (the checks read the description of the work, not the "agent [tier]:" label);
+              * an award is a positive amount;
               * one award per skill per SAME_SKILL_GAP.
 
 Historical local owner grants skip the checks above, are recorded with their reason and tallied as
@@ -34,6 +36,7 @@ Tamper evidence: every XP change is tallied by source. If a skill's XP stops mat
 baseline + its tallies (the save was edited by hand), the account is marked unverified.
 A save file on your own computer can always be edited; this makes it visible, not impossible.
 """
+import re
 import time
 
 BASE = 5_000
@@ -47,6 +50,9 @@ MIN_REASON = 12
 ACTIVE_DAY_MAX = 20 * 60          # minutes of activity in 24 h before measured XP stops
 DAY = 24 * 3600
 KEEP_AWARDS = 400
+VOID_COUNT_MAX = 1_000_000        # a voided award adds at most this to the voided-XP total
+# The log line of an agent award is "agent [tier]: <what was done>"; the checks look at the work only.
+_LABEL = re.compile(r"^agent(?: \[[a-z]+\])?: ")
 
 
 def blank():
@@ -106,6 +112,7 @@ def measured_ok(fair, now=None):
 
 
 def _norm(reason):
+    reason = _LABEL.sub("", reason or "", 1)
     return " ".join("".join(ch.lower() if ch.isalnum() else " " for ch in reason).split())
 
 
@@ -113,6 +120,8 @@ def check_award(fair, skill, xp, reason, kind, now=None):
     """(ok, why_not) for one unmeasured award. Does not record it."""
     now = now or time.time()
     recent = [a for a in fair["awards"] if a["ok"]]
+    if xp <= 0:
+        return False, "not a positive amount"
     if xp > MAX_SINGLE:
         return False, "more than %s XP in one award" % format(MAX_SINGLE, ",")
     r = _norm(reason or "")
@@ -135,12 +144,13 @@ def check_award(fair, skill, xp, reason, kind, now=None):
 
 
 def record_award(fair, skill, xp, reason, kind, ok, why_not, now=None):
-    fair["awards"].append({"t": int(now or time.time()), "skill": skill, "xp": int(xp), "kind": kind,
+    xp = max(0, min(int(xp), 10 ** 12))
+    fair["awards"].append({"t": int(now or time.time()), "skill": skill, "xp": xp, "kind": kind,
                            "reason": (reason or "")[:200], "ok": ok, "void": why_not})
     del fair["awards"][:-KEEP_AWARDS]
     if not ok:
         fair["voided"] += 1
-        fair["voidedXp"] += int(xp)
+        fair["voidedXp"] += min(int(xp), VOID_COUNT_MAX)
 
 
 def tally(fair, gains, source):

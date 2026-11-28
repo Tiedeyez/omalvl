@@ -16,7 +16,7 @@ OmaLvL is an Omarchy shell plugin of kind `bar-widget`. Its entry point, `Panel.
 
 ## What it reads, and why
 
-The daemon wakes every 30 seconds. Two background threads watch Hyprland's events and new processes.
+The daemon wakes every 30 seconds. Two background threads watch Hyprland's events and new processes. Only one copy samples: when the bar shows a panel on more than one monitor, each further copy waits on a lock file without doing any work and takes over only if the first one stops. At start the daemon also tidies its own folder: temporary files more than an hour old that an interrupted write left behind are removed, and of the damaged saves it has kept aside (`state.json.corrupt-*`) the newest five stay.
 
 | What | How | What is kept |
 |---|---|---|

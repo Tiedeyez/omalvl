@@ -109,7 +109,7 @@ def monitor_size():
 def render(snap, out=None, size=None):
     w, h = size or monitor_size()
     scale = max(2, min(w, h) // 270)
-    gw, gh = w // scale, h // scale
+    gw, gh = -(-w // scale), -(-h // scale)     # round up: the picture always covers the whole screen
     pal = dict(FALLBACK)
     pal.update({k: v for k, v in (snap.get("palette") or {}).items() if isinstance(v, str) and v.startswith("#")})
     bg, fg, accent = _rgb(pal["background"]), _rgb(pal["foreground"]), _rgb(pal["accent"])

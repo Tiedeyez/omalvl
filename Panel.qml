@@ -1505,7 +1505,7 @@ Panel {
               }
             }
             Repeater {
-              model: root.activity.slice().reverse()
+              model: root.activity      // newest first, as the engine sends it
               delegate: StepFrame {
                 id: logRow
                 required property var modelData

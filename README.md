@@ -62,6 +62,7 @@ omalvl skin rivet      # wear an unlocked panel skin
 omalvl wallpaper       # draw your stats as a wallpaper (then: omarchy-theme-bg-set <file>)
 omalvl guide shell     # a skill's guide
 omalvl run make -j8    # queue a long job in a job slot; omalvl collect when it's done
+omalvl drop alpha      # free a job slot without collecting (the program keeps running)
 omalvl fair            # fair-play status
 omalvl backup          # save a copy now and list backups;  omalvl restore latest
 omalvl wiki            # build and open the offline wiki
@@ -98,7 +99,8 @@ Leveling is never capped: measured activity is already paced per 30-second tick.
 
 - Agent awards (`omalvl agent`) and manual adds share a budget of 5,000 XP plus 100 per worked minute in the last 24 hours, and 30,000 per award. A worked minute is one where you were at the keyboard **or an AI agent or local model was measurably working for you** (the daemon sees its CPU time), so work you wait on earns XP too. Each hour counts at most 60 worked minutes.
 - Awards across more than 6 skills in 15 minutes are voided (a sweep across every skill is the botting pattern).
-- The same work can't be awarded twice in a week, and an award needs a real description.
+- The same work can't be awarded twice in a week (whatever tier it is given), and an award needs a real description of the work, at least 12 letters or digits.
+- An award is a positive amount: nothing takes XP away from one skill to make room for another.
 - A machine "active" for more than 20 of the last 24 hours stops earning measured XP until the pattern breaks.
 - Every XP change is tallied by source. If the save is edited by hand, the account shows as unverified.
 

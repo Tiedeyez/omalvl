@@ -35,6 +35,7 @@ Commands:
   guide <skill> [--json]    the skill guide: XP, pace, how to train it, what each level unlocks
   run <command...>          queue a long job in a job slot (or: run --pid N)
   collect [slot] | jobs     collect finished jobs for Workload XP / list the four slots
+  drop <slot>               free a job slot without collecting (the program is left running)
   streak                    your daily streak (the first active minute of each day continues it)
   add <skill> <xp>          grant XP by hand (fair play applies)
   agent <skill> <tier> <why>  an AI agent awards work XP, sized by difficulty:
@@ -51,7 +52,7 @@ import json
 import os
 import random
 import re
-import urllib.request as urllib_request
+import shlex
 import shutil
 import socket
 import stat
@@ -284,6 +285,9 @@ STATE_KEYS = {  # key: default factory
 }
 
 
+NULLABLE_DICT_KEYS = ("signal", "drop", "surge", "updateDay")
+
+
 def _blank():
     d = {k: f() for k, f in STATE_KEYS.items()}
     d["meta"]["version"] = 10
@@ -303,7 +307,7 @@ DROP_GUARD = 0.9   # a save that loses >10% of total xp is refused unless allow_
 
 def _offsite_dir():
     # off unless configured; the folder's parent must exist (a synced or mounted folder)
-    if not OFFSITE or not os.path.isdir(os.path.dirname(OFFSITE.rstrip("/")) or "/"):
+    if not OFFSITE or not os.path.isabs(OFFSITE) or not os.path.isdir(os.path.dirname(OFFSITE.rstrip("/")) or "/"):
         return None
     return os.path.join(OFFSITE, socket.gethostname())
 
@@ -515,8 +519,14 @@ def load():
     for k, v in blank.items():
         if k not in data or (v is not None and not isinstance(data[k], type(v))):
             data[k] = v
+    for k in NULLABLE_DICT_KEYS:                    # None or a dict; anything else is a damaged save
+        if data[k] is not None and not isinstance(data[k], dict):
+            data[k] = None
     for k in SKILL_KEYS:
-        data["xp"].setdefault(k, 0)
+        v = data["xp"].get(k, 0)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v < 0:
+            v = 0
+        data["xp"][k] = int(min(v, XP_CAP))
     for k in [k for k in data["xp"] if k not in SKILL_BY_KEY]:
         del data["xp"][k]
     for k, v in blank["contract"].items():
@@ -644,6 +654,44 @@ def _scrub_legacy_backup(path):
     return True
 
 
+KEEP_CORRUPT = 5
+
+
+def _sweep_leftovers(now=None):
+    """Housekeeping at daemon start: a write cut short by a power-off leaves its temporary file
+    behind, and every damaged save is kept aside; neither may pile up for ever. Removes our own
+    temporary files older than an hour and all but the newest KEEP_CORRUPT kept-aside saves."""
+    now = now or time.time()
+    me = os.getuid()
+    base = os.path.dirname(STATE)
+    for folder in (base, BACKUP_DIR):
+        try:
+            with os.scandir(folder) as entries:
+                names = [e for n, e in enumerate(entries) if n < 4096]
+        except OSError:
+            continue
+        aside = []
+        for e in names:
+            try:
+                st = e.stat(follow_symlinks=False)
+            except OSError:
+                continue
+            if not stat.S_ISREG(st.st_mode) or st.st_uid != me:
+                continue
+            if e.name.startswith(".") and e.name.endswith(".tmp") and now - st.st_mtime > 3600:
+                try:
+                    os.unlink(e.path)
+                except OSError:
+                    pass
+            elif e.name.startswith(os.path.basename(STATE) + ".corrupt-"):
+                aside.append((st.st_mtime, e.path))
+        for _, path in sorted(aside)[:-KEEP_CORRUPT]:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+
 def _tighten_legacy_files():
     """Older builds wrote job logs, exit files, weekly reports and kept-aside saves with the umask:
     make every app-owned file 0600 and folder 0700 (our own regular files only, never a symlink)."""
@@ -726,10 +774,16 @@ def _scrub_legacy_backups():
         sys.stderr.write("omalvl: some older backup files could not be privacy-scrubbed; remove or review them manually\n")
 
 
+def _open_lock(path):
+    """A lock file of our own: created 0600, never through a symlink, never truncated."""
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    return os.fdopen(fd, "r+")
+
+
 class _Lock:
     def __enter__(self):
         _private_dir(os.path.dirname(LOCK))
-        self.f = open(LOCK, "w")
+        self.f = _open_lock(LOCK)
         fcntl.flock(self.f, fcntl.LOCK_EX)
         return self
 
@@ -1071,6 +1125,8 @@ def _tree_progress(data, res):
 
 
 def tree_branch(node):
+    if node in NOT_ACTIONS:           # counted by an older build: never a node
+        return None
     for bid, name, prefixes, _ in TREE_BRANCHES:
         if any(node == p or (p.endswith(":") and node.startswith(p)) for p in prefixes):
             return bid
@@ -1463,6 +1519,22 @@ def _companion_log(data):
 
 
 # --------------------------------------------------------------- output
+def _plain(text, limit=200):
+    """One line of ordinary text: control characters, escape sequences and line breaks become spaces."""
+    return " ".join("".join(ch if ch.isprintable() else " " for ch in str(text)).split())[:limit]
+
+
+def _parse_xp(word):
+    """A whole positive number of XP from the command line, or None."""
+    try:
+        v = float(word)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v in (float("inf"), float("-inf")):
+        return None
+    return int(v)
+
+
 def notify(title, msg):
     try:
         subprocess.Popen([tool("notify-send"), "-a", "OmaLvL", "-i", "input-gaming", title, msg])
@@ -1553,9 +1625,8 @@ def cmd_add(argv, agent=False):
         print("unknown skill: %s (%s)" % (argv[0], ", ".join(SKILL_KEYS)), file=sys.stderr)
         return 2
     tier = argv[1].lower() if agent and argv[1].lower() in AGENT_TIERS else None
-    try:
-        xp = AGENT_TIERS[tier] if tier else int(float(argv[1]))
-    except ValueError:
+    xp = AGENT_TIERS[tier] if tier else _parse_xp(argv[1])
+    if xp is None:
         print("not a tier or a number: %s (tiers: %s)" % (argv[1], ", ".join(AGENT_TIERS)), file=sys.stderr)
         return 2
     if xp <= 0:
@@ -1563,7 +1634,7 @@ def cmd_add(argv, agent=False):
         return 2
     why = "omalvl add"
     if agent:
-        reason = " ".join(argv[2:]).strip()
+        reason = _plain(" ".join(argv[2:]))
         if not reason:
             print("agent awards need a reason: omalvl agent <skill> <tier> <what was done>", file=sys.stderr)
             return 2
@@ -1592,7 +1663,10 @@ def cmd_task(argv):
         return 2
     key, xp = TASKS[name]
     if len(argv) > 1:
-        xp = int(float(argv[1]))
+        xp = _parse_xp(argv[1])
+        if xp is None or xp <= 0:
+            print("xp must be a positive number: omalvl task %s [xp]" % name, file=sys.stderr)
+            return 2
     res = grant({key: xp}, why="task: " + name, source="manual")
     announce(res)
     if res.voided:
@@ -1621,6 +1695,9 @@ def cmd_quests(argv):
 
 def cmd_quest(argv):
     qid = argv[0].lower() if argv else ""
+    if not qid:
+        print("usage: omalvl quest <id> [steps]   (ids: omalvl quests)", file=sys.stderr)
+        return 2
     if qid not in QUEST_BY_ID:
         print("unknown quest: %s  (see: omalvl quests)" % qid, file=sys.stderr)
         return 2
@@ -1708,7 +1785,8 @@ def cmd_log(argv):
     for e in reversed(snapshot()["activity"]):
         stamp = time.strftime("%a %H:%M", time.localtime(e["t"]))
         extra = ("  [quest: %s]" % ", ".join(e["quests"])) if e["quests"] else ""
-        print("%s  %-34s %s%s" % (stamp, e["why"][:34], e["gains"], extra))
+        why = _plain(e["why"])
+        print("%s  %-34s %s%s" % (stamp, why[:34] if e["gains"] else why[:110], e["gains"], extra))
 
 
 def week_report(data=None):
@@ -1747,6 +1825,9 @@ def cmd_week(argv):
 
 
 def cmd_reset(argv):
+    if argv and not skill_key(argv[0]):
+        print("unknown skill: %s (%s)" % (argv[0], ", ".join(SKILL_KEYS)), file=sys.stderr)
+        return 2
     with _Lock():
         snap = snapshot_file("before-reset")
         if snap:
@@ -1790,7 +1871,7 @@ def cmd_backup(argv):
     """omalvl backup        save a copy now and list every backup"""
     with _Lock():
         snap = snapshot_file("manual")
-    print("saved %s" % snap)
+    print("saved %s" % snap if snap else "Nothing to back up yet: no save exists (it is created the first time you earn XP).")
     print("off-machine copies: %s" % (_offsite_dir() or "off (set \"offsite\" in the config)"))
     for t, p, lvl, xp in _backup_list()[:20]:
         print("%s  level %4d  %11s xp  %s" % (time.strftime("%Y-%m-%d %H:%M", time.localtime(t)),
@@ -2307,7 +2388,10 @@ def _history_words(segment):
 def _job_label(command):
     """What a job slot shows and saves: the program name only. Arguments can hold secrets and
     the state file is copied into backups (and off-machine), so they are never persisted."""
-    words = command.split()
+    try:
+        words = shlex.split(command)       # a quoted program path stays one word
+    except ValueError:
+        words = command.split()
     while words and (words[0].lower() in ("sudo", "env") or _HISTORY_ASSIGNMENT.match(words[0])):
         words = words[1:]
     if not words:
@@ -2341,7 +2425,8 @@ def chromium_visits():
     hits = 0
     for prof in glob.glob(os.path.join(HOME, ".config/chromium/*/History")):
         try:
-            con = sqlite3.connect("file:%s?mode=ro&immutable=1" % urllib_request.quote(prof), uri=True, timeout=2)
+            from urllib.parse import quote
+            con = sqlite3.connect("file:%s?mode=ro&immutable=1" % quote(prof), uri=True, timeout=2)
             try:
                 hits += int(con.execute("SELECT count(*) FROM visits").fetchone()[0])
             finally:
@@ -2450,11 +2535,14 @@ def watch_hyprland(ev):
 
 
 # Omarchy commands the shell or scripts run for status, not because you pressed anything.
-NOT_ACTIONS = {"capture:webcam-list", "capture:webcam-resize", "toggle:enabled"}
+# Helpers Omarchy itself runs (the screen recorder's worker, the webcam picker): not something you pressed.
+NOT_ACTIONS = {"capture:webcam-list", "capture:webcam-resize", "toggle:enabled", "capture:screenrecording-process"}
 
 
 def classify_command(argv):
     """An Omarchy keybind command line -> event key, or None."""
+    if "--status" in argv[1:]:       # the bar and the menu ask "is it on?" all day: a question, not an action
+        return None
     key = _classify(argv)
     return None if key in NOT_ACTIONS else safe_event(key)
 
@@ -2775,13 +2863,19 @@ def cmd_run(argv):
         # random suffix: a collect + run in the same second reuses the slot and the stamp
         base = os.path.join(JOB_DIR, "%s-%d-%s" % (slot.lower(), stamp, os.urandom(4).hex()))
         if argv[0] == "--pid":
-            pid, label = int(argv[1]), " ".join(argv[2:]) or "pid-%s" % argv[1]
+            pid = int(argv[1]) if len(argv) > 1 and argv[1].isdigit() else 0
+            if pid <= 0:
+                print("usage: omalvl run --pid <pid> [label]   (the number of a running process)", file=sys.stderr)
+                return 2
+            label = " ".join(argv[2:]) or "pid-%d" % pid
             if not _alive(pid):
                 print("No process %d is running." % pid)
                 return 1
             exitf = None
         else:
-            label = " ".join(argv)
+            # one argument is a shell command line ("make && make install"); several are a program and
+            # its arguments, passed on exactly as typed (joining them with spaces lost their quoting)
+            label = argv[0] if len(argv) == 1 else shlex.join(argv)
             exitf = base + ".exit"
             log_fd = os.open(base + ".log", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
                              | getattr(os, "O_NOFOLLOW", 0), 0o600)
@@ -2802,8 +2896,8 @@ def cmd_run(argv):
           % ("'%s'" % _job_label(label), slot))
 
 
-def check_jobs():
-    """Daemon: notice jobs that finished (or failed)."""
+def check_jobs(tell=True):
+    """Notice jobs that finished (or failed). The daemon tells you; collect and jobs just look."""
     ready = []
     with _Lock():
         data = load()
@@ -2823,7 +2917,7 @@ def check_jobs():
             ready.append(p)
         if changed:
             save(data)
-    for p in ready:
+    for p in ready if tell else ():
         if p.get("exit"):
             notify("Job slot %s" % p["slot"], "'%s' failed with exit %d." % (p["cmd"][:60], p["exit"]))
         else:
@@ -2838,6 +2932,10 @@ def job_xp(p):
 
 def cmd_collect(argv):
     want = argv[0].title() if argv else None
+    if want and want not in JOB_SLOTS:
+        print("unknown job slot: %s (%s)" % (argv[0], ", ".join(JOB_SLOTS)), file=sys.stderr)
+        return 2
+    check_jobs(tell=False)      # a job that just ended is ready now, not at the daemon's next look
     with _Lock():
         data = load()
         ripe = [p for p in data["jobs"] if p["done"] and (not want or p["slot"] == want)]
@@ -2857,7 +2955,25 @@ def cmd_collect(argv):
     announce(res)
 
 
+def cmd_drop(argv):
+    """omalvl drop <slot>   free a job slot without collecting (the program itself is left alone)"""
+    want = argv[0].title() if argv else None
+    if want not in JOB_SLOTS:
+        print("usage: omalvl drop <slot>   (%s)" % ", ".join(JOB_SLOTS), file=sys.stderr)
+        return 2
+    with _Lock():
+        data = load()
+        if not any(p["slot"] == want for p in data["jobs"]):
+            print("Job slot %s is already empty." % want)
+            return 0
+        data["jobs"] = [p for p in data["jobs"] if p["slot"] != want]
+        save(data)
+    print("Freed job slot %s. No XP; whatever was running there keeps running." % want)
+    return 0
+
+
 def cmd_jobs(argv):
+    check_jobs(tell=False)
     data = load()
     if not data["jobs"]:
         print("All four job slots are empty. Queue one: omalvl run <long command>")
@@ -2900,19 +3016,27 @@ def daily_streak():
 LLM_URL = "http://127.0.0.1:8080"
 
 
-class _NoRedirect(urllib_request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):
-        return None          # a 3xx from the local model is an error, never followed
+def _urllib():
+    """urllib.request, loaded only when the local model is asked: it is a quarter of the engine's
+    start-up time, and the panel starts the engine every time the save changes."""
+    import urllib.request
+    return urllib.request
 
 
 def _local_opener():
     """Talks only to the loopback model: no proxy (an http_proxy without a 127.0.0.1 bypass
     would otherwise receive the prompt) and no redirects."""
+    urllib_request = _urllib()
+
+    class _NoRedirect(urllib_request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None          # a 3xx from the local model is an error, never followed
+
     return urllib_request.build_opener(urllib_request.ProxyHandler({}), _NoRedirect())
 
 
 def _local_open(req, timeout):
-    url = req.full_url if isinstance(req, urllib_request.Request) else req
+    url = req.full_url if isinstance(req, _urllib().Request) else req
     if not url.startswith(LLM_URL + "/"):
         raise ValueError("local model calls must go to %s" % LLM_URL)
     return _local_opener().open(req, timeout=timeout)
@@ -2981,7 +3105,7 @@ def cmd_sysop_explain():
     body = json.dumps({"model": "local", "messages": [{"role": "user", "content": prompt}],
                        "max_tokens": 220, "temperature": 0.3}).encode()
     try:
-        req_ = urllib_request.Request(LLM_URL + "/v1/chat/completions", body, {"Content-Type": "application/json"})
+        req_ = _urllib().Request(LLM_URL + "/v1/chat/completions", body, {"Content-Type": "application/json"})
         text = json.load(_local_open(req_, timeout=240))["choices"][0]["message"]["content"].strip()
     except Exception as e:
         text = ""
@@ -3027,15 +3151,21 @@ ACTIVE_IRQS = 15  # i8042 interrupts per tick that count as "at the computer"
 
 
 def daemon():
-    os.makedirs(os.path.dirname(LOCK), exist_ok=True)
+    _private_dir(os.path.dirname(LOCK))
     global DAEMON_LOCK
-    DAEMON_LOCK = open(LOCK + ".daemon", "w")
+    DAEMON_LOCK = _open_lock(LOCK + ".daemon")
     try:
         fcntl.flock(DAEMON_LOCK, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        return   # another copy (one per monitor) is already running
+        # Another copy is sampling (the bar has one panel per monitor, each starts one). Exiting
+        # here made the panel start Python again every five seconds, for ever; instead sleep on
+        # the lock at no cost and take over if the running copy stops.
+        if sys.stderr.isatty():
+            sys.stderr.write("omalvl: the sampler is already running; standing by (Ctrl+C to leave)\n")
+        fcntl.flock(DAEMON_LOCK, fcntl.LOCK_EX)
     with _Lock():
         save(load())   # rewrite once so the UI gets the current format
+        _sweep_leftovers()
     live = Events()
     threading.Thread(target=watch_hyprland, args=(live,), daemon=True).start()
     threading.Thread(target=watch_processes, args=(live,), daemon=True).start()
@@ -3290,7 +3420,7 @@ def main():
         "season": cmd_season, "stamps": cmd_season, "relics": cmd_relics, "tree": cmd_tree,
         "skin": cmd_skin, "skins": cmd_skin, "wallpaper": cmd_wallpaper,
         "wiki": cmd_wiki, "guide": cmd_guide,
-        "run": cmd_run, "collect": cmd_collect, "jobs": cmd_jobs,
+        "run": cmd_run, "collect": cmd_collect, "jobs": cmd_jobs, "drop": cmd_drop,
         "streak": lambda a: print("Daily streak: %(count)d day(s) · best %(best)d · last %(day)s" % load()["streak"]),
     }
     if cmd in ("-h", "--help", "help"):
@@ -3299,7 +3429,20 @@ def main():
     if cmd not in handlers:
         print("unknown command: %s  (try: omalvl help)" % cmd, file=sys.stderr)
         return 2
-    return handlers[cmd](argv)
+    try:
+        return handlers[cmd](argv)
+    except BrokenPipeError:                      # omalvl log | head
+        try:
+            sys.stdout = open(os.devnull, "w")
+        except OSError:
+            pass
+        return 0
+    except (KeyError, TypeError, AttributeError, IndexError, ValueError, OverflowError) as e:
+        if os.environ.get("OMALVL_DEBUG"):
+            raise
+        print("omalvl: %s went wrong (%s: %s).\nIf the save was edited by hand, `omalvl restore latest` puts the last "
+              "backup back. OMALVL_DEBUG=1 shows the details." % (cmd, type(e).__name__, _plain(e, 120)), file=sys.stderr)
+        return 1
 
 
 def cmd_wallpaper(argv):
@@ -3307,7 +3450,11 @@ def cmd_wallpaper(argv):
     out = None
     if "--out" in argv and argv.index("--out") + 1 < len(argv):
         out = os.path.expanduser(argv[argv.index("--out") + 1])
-    path = wallpaper.render(snapshot(), out)
+    try:
+        path = wallpaper.render(snapshot(), out)
+    except OSError as e:
+        print("can't write the wallpaper: %s" % e, file=sys.stderr)
+        return 1
     print("Wallpaper: %s\nSet it as your background: omarchy-theme-bg-set %s" % (path, path))
     return 0
 

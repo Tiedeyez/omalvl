@@ -980,7 +980,8 @@ daemon tells you, and you <b>collect</b> it for %s XP: <b>%d + %d per minute</b>
 <pre><code>omalvl run make -j2                   # run and watch a command
 omalvl run --pid 12345 "big download"  # watch something already running
 omalvl jobs                           # see the four slots
-omalvl collect                        # collect everything that's done</code></pre>
+omalvl collect                        # collect everything that's done
+omalvl drop alpha                     # free a slot without collecting (the program keeps running)</code></pre>
 <h2>Your slots</h2><table class="wikitable"><tr><th>Slot</th><th>State</th><th>Job</th></tr>%s</table>
 <p>Output of queued commands is kept in <code>~/.local/state/omalvl/jobs/</code>.</p>""" % (
         slink("workload"), C.HARVEST_BASE, C.HARVEST_PER_MIN, "{:,}".format(C.HARVEST_MAX), int(C.DEAD_SHARE * 100), "".join(rows))
